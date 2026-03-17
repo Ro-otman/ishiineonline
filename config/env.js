@@ -22,6 +22,7 @@ export const env = {
   DB_PASSWORD: process.env.DB_PASSWORD || '',
   DB_NAME: process.env.DB_NAME || '',
   DB_CONNECTION_LIMIT: toInt(process.env.DB_CONNECTION_LIMIT, 10),
+  DB_DEBUG: toBool(process.env.DB_DEBUG, false),
 
   // SSL
   DB_SSL: toBool(process.env.DB_SSL, false),
