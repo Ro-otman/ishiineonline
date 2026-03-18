@@ -411,7 +411,7 @@ INSERT INTO niveaux (nom_niveau) VALUES ('premier_cycle'), ('second_cycle');
 
 INSERT INTO type_series (nom_type) VALUES
   ('scientifique'),
-  ('littÃ©raire'),
+  ('littéraire'),
   ('economique');
 
 INSERT INTO series (nom_serie, id_type)
@@ -426,12 +426,12 @@ UNION ALL
 SELECT 'B', id_type FROM type_series WHERE nom_type = 'economique';
 
 INSERT INTO classes (nom_classe, id_niveau)
-SELECT '3Ã¨me', id_niveau FROM niveaux WHERE nom_niveau = 'premier_cycle';
+SELECT '3ème', id_niveau FROM niveaux WHERE nom_niveau = 'premier_cycle';
 
 INSERT INTO classes (nom_classe, id_niveau)
 SELECT '2nd', id_niveau FROM niveaux WHERE nom_niveau = 'second_cycle'
 UNION ALL
-SELECT '1Ã¨re', id_niveau FROM niveaux WHERE nom_niveau = 'second_cycle'
+SELECT '1ère', id_niveau FROM niveaux WHERE nom_niveau = 'second_cycle'
 UNION ALL
 SELECT 'Tle', id_niveau FROM niveaux WHERE nom_niveau = 'second_cycle';
 
@@ -439,7 +439,7 @@ INSERT IGNORE INTO classe_serie (id_classe, id_serie)
 SELECT c.id_classe, s.id_serie
 FROM classes c
 JOIN series s
-WHERE c.nom_classe = '3Ã¨me' AND s.nom_serie = '3Ã¨me';
+WHERE c.nom_classe = '3ème' AND s.nom_serie = '3ème';
 
 INSERT IGNORE INTO classe_serie (id_classe, id_serie)
 SELECT c.id_classe, s.id_serie
@@ -451,7 +451,7 @@ INSERT IGNORE INTO classe_serie (id_classe, id_serie)
 SELECT c.id_classe, s.id_serie
 FROM classes c
 JOIN series s
-WHERE c.nom_classe = '1Ã¨re' AND s.nom_serie IN ('C', 'D', 'A1', 'A2', 'B');
+WHERE c.nom_classe = '1ère' AND s.nom_serie IN ('C', 'D', 'A1', 'A2', 'B');
 
 INSERT IGNORE INTO classe_serie (id_classe, id_serie)
 SELECT c.id_classe, s.id_serie
@@ -460,9 +460,9 @@ JOIN series s
 WHERE c.nom_classe = 'Tle' AND s.nom_serie IN ('C', 'D', 'A1', 'A2', 'B');
 
 INSERT INTO matieres (nom_matiere) VALUES
-  ('Hist-GÃ©o'),
+  ('Hist-Géo'),
   ('Maths'),
-  ('FranÃ§ais'),
+  ('Français'),
   ('PCT'),
   ('Anglais'),
   ('Philosophie'),
@@ -473,21 +473,21 @@ INSERT INTO matieres (nom_matiere) VALUES
 INSERT INTO programme (id_matiere, id_classe, id_type)
 SELECT m.id_matiere, c.id_classe, NULL
 FROM matieres m
-JOIN classes c ON c.nom_classe = '3Ã¨me'
-WHERE m.nom_matiere IN ('Hist-GÃ©o', 'Maths', 'FranÃ§ais', 'Anglais', 'PCT', 'SVT');
+JOIN classes c ON c.nom_classe = '3ème'
+WHERE m.nom_matiere IN ('Hist-Géo', 'Maths', 'Français', 'Anglais', 'PCT', 'SVT');
 
 -- programme: commun lycée (2nd, 1ère, Tle)
 INSERT INTO programme (id_matiere, id_classe, id_type)
 SELECT m.id_matiere, c.id_classe, NULL
 FROM matieres m
-JOIN classes c ON c.nom_classe IN ('2nd', '1Ã¨re', 'Tle')
-WHERE m.nom_matiere IN ('Hist-GÃ©o', 'Maths', 'FranÃ§ais', 'Philosophie', 'Anglais');
+JOIN classes c ON c.nom_classe IN ('2nd', '1ère', 'Tle')
+WHERE m.nom_matiere IN ('Hist-Géo', 'Maths', 'Français', 'Philosophie', 'Anglais');
 
 -- programme: PCT + SVT (scientifique)
 INSERT INTO programme (id_matiere, id_classe, id_type)
 SELECT m.id_matiere, c.id_classe, t.id_type
 FROM matieres m
-JOIN classes c ON c.nom_classe IN ('2nd', '1Ã¨re', 'Tle')
+JOIN classes c ON c.nom_classe IN ('2nd', '1ère', 'Tle')
 JOIN type_series t ON t.nom_type = 'scientifique'
 WHERE m.nom_matiere IN ('PCT', 'SVT');
 
@@ -495,15 +495,15 @@ WHERE m.nom_matiere IN ('PCT', 'SVT');
 INSERT INTO programme (id_matiere, id_classe, id_type)
 SELECT m.id_matiere, c.id_classe, t.id_type
 FROM matieres m
-JOIN classes c ON c.nom_classe IN ('2nd', '1Ã¨re', 'Tle')
-JOIN type_series t ON t.nom_type = 'littÃ©raire'
+JOIN classes c ON c.nom_classe IN ('2nd', '1ère', 'Tle')
+JOIN type_series t ON t.nom_type = 'littéraire'
 WHERE m.nom_matiere = 'SVT';
 
 -- programme: SVT (économique)
 INSERT INTO programme (id_matiere, id_classe, id_type)
 SELECT m.id_matiere, c.id_classe, t.id_type
 FROM matieres m
-JOIN classes c ON c.nom_classe IN ('2nd', '1Ã¨re', 'Tle')
+JOIN classes c ON c.nom_classe IN ('2nd', '1ère', 'Tle')
 JOIN type_series t ON t.nom_type = 'economique'
 WHERE m.nom_matiere = 'SVT';
 

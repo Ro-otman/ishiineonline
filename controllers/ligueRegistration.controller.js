@@ -1,10 +1,15 @@
-import crypto from 'node:crypto';
+﻿import crypto from 'node:crypto';
 
 import {
   getLigueProfileByUserId,
   upsertLigueProfile,
 } from '../models/ligueProfiles.model.js';
-import { upsertUser } from '../models/users.model.js';
+import {
+  getUserById,
+  getUserByIdentity,
+  rekeyUserId,
+  upsertUser,
+} from '../models/users.model.js';
 
 function asString(value) {
   if (value === undefined || value === null) return '';
@@ -54,7 +59,7 @@ export async function registerToLigue(req, res, next) {
   try {
     const body = req.body || {};
 
-    const id_users =
+    const requestedUserId =
       asString(body.id_users || body.id_user).trim() || crypto.randomUUID();
     const nom = asString(body.nom).trim();
     const prenoms = asString(body.prenoms).trim();
@@ -80,6 +85,18 @@ export async function registerToLigue(req, res, next) {
     }
 
     const img_path = req.file ? `/uploads/users/${req.file.filename}` : null;
+
+    let id_users = requestedUserId;
+    const existingUserById = await getUserById(id_users);
+    if (!existingUserById) {
+      const matchedUser = await getUserByIdentity({ email, phone });
+      if (matchedUser?.id_users && matchedUser.id_users !== id_users) {
+        await rekeyUserId({
+          fromUserId: matchedUser.id_users,
+          toUserId: id_users,
+        });
+      }
+    }
 
     const user = await upsertUser({
       id_users,
@@ -124,10 +141,11 @@ export async function registerToLigue(req, res, next) {
       serie_key,
     });
 
-    return res.status(201).json({
+    return res.status(existingProfile ? 200 : 201).json({
       ok: true,
       user,
       ligueProfile,
+      restored: true,
     });
   } catch (err) {
     if (err?.code === 'ER_DUP_ENTRY') {

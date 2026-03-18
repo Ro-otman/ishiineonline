@@ -5,6 +5,46 @@ export async function getUserById(id_users) {
   return rows[0] ?? null;
 }
 
+export async function getUserByEmail(email) {
+  const safeEmail = String(email ?? '').trim();
+  if (!safeEmail) return null;
+  const rows = await execute(
+    'SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+    [safeEmail],
+  );
+  return rows[0] ?? null;
+}
+
+export async function getUserByPhone(phone) {
+  const safePhone = String(phone ?? '').trim();
+  if (!safePhone) return null;
+  const rows = await execute('SELECT * FROM users WHERE phone = ? LIMIT 1', [
+    safePhone,
+  ]);
+  return rows[0] ?? null;
+}
+
+export async function getUserByIdentity({ email, phone }) {
+  const byEmail = await getUserByEmail(email);
+  if (byEmail) return byEmail;
+  return getUserByPhone(phone);
+}
+
+export async function rekeyUserId({ fromUserId, toUserId }) {
+  const sourceId = String(fromUserId ?? '').trim();
+  const targetId = String(toUserId ?? '').trim();
+  if (!sourceId && !targetId) return null;
+  if (!sourceId || !targetId || sourceId === targetId) {
+    return getUserById(targetId || sourceId);
+  }
+
+  await execute('UPDATE users SET id_users = ? WHERE id_users = ?', [
+    targetId,
+    sourceId,
+  ]);
+  return getUserById(targetId);
+}
+
 export async function upsertUser(user) {
   await execute(
     `
@@ -44,8 +84,8 @@ export async function upsertUser(user) {
       user.is_subscribed,
       user.subscription_date,
       user.subscription_expiry,
-      user.first_use_time
-    ]
+      user.first_use_time,
+    ],
   );
 
   return getUserById(user.id_users);
