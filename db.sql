@@ -8,6 +8,11 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS ligue_run_answers;
+DROP TABLE IF EXISTS ligue_run_questions;
+DROP TABLE IF EXISTS ligue_runs;
+DROP TABLE IF EXISTS ligue_profiles;
+
 DROP TABLE IF EXISTS weekly_qualifications;
 DROP TABLE IF EXISTS league_history;
 DROP TABLE IF EXISTS user_badges;
@@ -539,4 +544,108 @@ CREATE TABLE ligue_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE INDEX idx_ligue_settings_classe_type ON ligue_settings(id_classe, id_type, updated_at);
+
+
+-- Ligue (inscription Flutter)
+CREATE TABLE ligue_profiles (
+  id_user VARCHAR(255) PRIMARY KEY,
+  handle VARCHAR(64) NOT NULL,
+  salle_key VARCHAR(32) NOT NULL,
+  serie_key VARCHAR(32),
+  registered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_ligue_profiles_handle (handle),
+  CONSTRAINT fk_ligue_profiles_user FOREIGN KEY (id_user)
+    REFERENCES users(id_users)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- Ligue (live) - runs/results
+CREATE TABLE ligue_runs (
+  id_run CHAR(36) PRIMARY KEY,
+  week_key VARCHAR(32) NOT NULL,
+  id_user VARCHAR(255) NOT NULL,
+  id_classe INT NOT NULL,
+  id_serie INT NOT NULL,
+  id_matiere INT NOT NULL,
+
+  started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  submitted_at DATETIME NULL,
+
+  total_questions INT NOT NULL,
+  correct_count INT NOT NULL DEFAULT 0,
+  total_response_time_ms INT NOT NULL DEFAULT 0,
+  score_percent DOUBLE NOT NULL DEFAULT 0,
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  UNIQUE KEY uq_ligue_runs_unique (week_key, id_user, id_classe, id_serie, id_matiere),
+  KEY idx_ligue_runs_room_week (week_key, id_classe, id_serie),
+  KEY idx_ligue_runs_user_week (week_key, id_user),
+
+  CONSTRAINT fk_ligue_runs_user FOREIGN KEY (id_user)
+    REFERENCES users(id_users)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_runs_classe FOREIGN KEY (id_classe)
+    REFERENCES classes(id_classe)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_runs_serie FOREIGN KEY (id_serie)
+    REFERENCES series(id_serie)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_runs_matiere FOREIGN KEY (id_matiere)
+    REFERENCES matieres(id_matiere)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE ligue_run_questions (
+  id_run CHAR(36) NOT NULL,
+  question_index INT NOT NULL,
+  id_quiz INT NOT NULL,
+
+  PRIMARY KEY (id_run, question_index),
+  UNIQUE KEY uq_ligue_run_questions_run_quiz (id_run, id_quiz),
+  KEY idx_ligue_run_questions_quiz (id_quiz),
+
+  CONSTRAINT fk_ligue_run_questions_run FOREIGN KEY (id_run)
+    REFERENCES ligue_runs(id_run)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_run_questions_quiz FOREIGN KEY (id_quiz)
+    REFERENCES quiz(id_quiz)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE ligue_run_answers (
+  id_run CHAR(36) NOT NULL,
+  id_quiz INT NOT NULL,
+  id_options INT NULL,
+
+  is_correct TINYINT(1) NOT NULL,
+  response_time_ms INT,
+  answered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id_run, id_quiz),
+  KEY idx_ligue_run_answers_run (id_run),
+
+  CONSTRAINT fk_ligue_run_answers_run FOREIGN KEY (id_run)
+    REFERENCES ligue_runs(id_run)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_run_answers_quiz FOREIGN KEY (id_quiz)
+    REFERENCES quiz(id_quiz)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_run_answers_option FOREIGN KEY (id_options)
+    REFERENCES `options`(id_options)
+    ON DELETE SET NULL
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
