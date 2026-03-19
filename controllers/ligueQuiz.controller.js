@@ -1,4 +1,4 @@
-﻿import crypto from 'node:crypto';
+import crypto from 'node:crypto';
 
 import { getClasseByName } from '../models/classes.model.js';
 import { getLatestLigueSettings } from '../models/ligueSettings.model.js';
@@ -14,17 +14,17 @@ import {
   getLigueRunByUnique,
   insertLigueRunAnswers,
   insertLigueRunQuestions,
-  listLigueRunQuestions
+  listLigueRunQuestions,
 } from '../models/ligueRuns.model.js';
 
 import {
   getLigueQuizPayloadByIds,
   listCorrectOptionIdsByQuizIds,
-  listLigueQuizIdsForMatiere
+  listLigueQuizIdsForMatiere,
 } from '../models/quiz.model.js';
 
 import { getLigueProfileByUserId } from '../models/ligueProfiles.model.js';
-import { buildSchedule } from '../services/ligueSchedule.service.js';
+import { buildSchedule, computeQuestionWindow } from '../services/ligueSchedule.service.js';
 import { getSubscriptionStatus } from '../services/subscription.service.js';
 import { weekKeyFromDateUtc } from '../services/weekKey.service.js';
 
@@ -77,7 +77,7 @@ async function resolveContext({ roomId, classe }) {
 
   const settings = await getLatestLigueSettings({
     id_classe: classRow.id_classe,
-    id_type: room.id_type
+    id_type: room.id_type,
   });
 
   if (!settings) {
@@ -88,8 +88,9 @@ async function resolveContext({ roomId, classe }) {
     );
   }
 
-  const startBase = settings.starts_at instanceof Date ? settings.starts_at : new Date(settings.starts_at);
-  if (Number.isNaN(startBase.getTime())) {
+  const configuredStartBase =
+    settings.starts_at instanceof Date ? settings.starts_at : new Date(settings.starts_at);
+  if (Number.isNaN(configuredStartBase.getTime())) {
     throw httpError(500, 'LIGUE_BAD_CONFIG', 'starts_at invalide dans ligue_settings');
   }
 
@@ -100,31 +101,33 @@ async function resolveContext({ roomId, classe }) {
 
   const subjects = await listMatieresForClasseAndType({
     id_classe: classRow.id_classe,
-    id_type: room.id_type
+    id_type: room.id_type,
   });
 
   const schedule = buildSchedule({
-    startBase,
+    startBase: configuredStartBase,
     subjects,
     secondsPerQuestion,
     questionsPerSubject,
     marginSeconds,
-    breakSeconds
+    breakSeconds,
   });
 
-  const weekKey = weekKeyFromDateUtc(startBase) ?? weekKeyFromDateUtc(new Date());
+  const effectiveStartBase = new Date(schedule.startBase);
+  const weekKey = weekKeyFromDateUtc(effectiveStartBase) ?? weekKeyFromDateUtc(new Date());
 
   return {
     room,
     classRow,
     settings,
-    startBase,
+    configuredStartBase,
+    startBase: effectiveStartBase,
     schedule,
     weekKey,
     secondsPerQuestion,
     questionsPerSubject,
     marginSeconds,
-    breakSeconds
+    breakSeconds,
   };
 }
 
@@ -143,8 +146,8 @@ export async function startSubjectRun(req, res, next) {
         ok: false,
         error: {
           code: 'BAD_REQUEST',
-          message: 'Champs requis: roomId, subjectId, userId + query ?classe='
-        }
+          message: 'Champs requis: roomId, subjectId, userId + query ?classe=',
+        },
       });
     }
 
@@ -155,27 +158,33 @@ export async function startSubjectRun(req, res, next) {
       schedule,
       weekKey,
       secondsPerQuestion,
-      questionsPerSubject
+      questionsPerSubject,
     } = await resolveContext({ roomId, classe });
 
     const slot = schedule.slots.find((s) => Number(s.id_matiere) === subjectId);
     if (!slot) {
       return res.status(404).json({
         ok: false,
-        error: { code: 'NOT_FOUND', message: 'Matiere introuvable pour cette classe/serie' }
+        error: { code: 'NOT_FOUND', message: 'Matiere introuvable pour cette classe/serie' },
       });
     }
 
     const now = Date.now();
     const slotStartMs = Date.parse(slot.startAt);
-    const slotEndMs = Date.parse(slot.endAt);
+    const questionWindow = computeQuestionWindow({
+      slot,
+      secondsPerQuestion,
+      totalQuestions: questionsPerSubject,
+      now: new Date(now),
+    });
+    const quizEndMs = slotStartMs + secondsPerQuestion * questionsPerSubject * 1000;
 
     if (!devBypass) {
       const user = await getUserById(userId);
       if (!user) {
         return res.status(404).json({
           ok: false,
-          error: { code: 'USER_NOT_FOUND', message: 'Utilisateur introuvable' }
+          error: { code: 'USER_NOT_FOUND', message: 'Utilisateur introuvable' },
         });
       }
 
@@ -185,8 +194,8 @@ export async function startSubjectRun(req, res, next) {
           ok: false,
           error: {
             code: 'SUBSCRIPTION_REQUIRED',
-            message: subscription.reason === 'EXPIRED' ? 'Abonnement expire' : 'Abonnement requis'
-          }
+            message: subscription.reason === 'EXPIRED' ? 'Abonnement expire' : 'Abonnement requis',
+          },
         });
       }
 
@@ -196,8 +205,8 @@ export async function startSubjectRun(req, res, next) {
           ok: false,
           error: {
             code: 'LIGUE_PROFILE_REQUIRED',
-            message: 'Inscription ligue requise avant de rejoindre une salle.'
-          }
+            message: 'Inscription ligue requise avant de rejoindre une salle.',
+          },
         });
       }
 
@@ -208,9 +217,9 @@ export async function startSubjectRun(req, res, next) {
           ok: false,
           error: {
             code: 'SALLE_LOCKED',
-            message: 'Cette salle ne correspond pas a celle choisie lors de l inscription.'
+            message: 'Cette salle ne correspond pas a celle choisie lors de l inscription.',
           },
-          ligueProfile
+          ligueProfile,
         });
       }
 
@@ -221,9 +230,9 @@ export async function startSubjectRun(req, res, next) {
           ok: false,
           error: {
             code: 'SERIE_LOCKED',
-            message: 'Cette serie ne correspond pas a la salle validee par l utilisateur.'
+            message: 'Cette serie ne correspond pas a la salle validee par l utilisateur.',
           },
-          ligueProfile
+          ligueProfile,
         });
       }
 
@@ -233,10 +242,10 @@ export async function startSubjectRun(req, res, next) {
           ok: false,
           error: {
             code: 'NO_ACTIVE_SUBJECT',
-            message: "Aucune matiere n'est active pour le moment."
+            message: "Aucune matiere n'est active pour le moment.",
           },
           serverNow: new Date().toISOString(),
-          startBase: startBase.toISOString()
+          startBase: startBase.toISOString(),
         });
       }
 
@@ -245,28 +254,28 @@ export async function startSubjectRun(req, res, next) {
           ok: false,
           error: {
             code: 'NOT_CURRENT_SUBJECT',
-            message: 'Seule la matiere en cours est jouable.'
+            message: 'Seule la matiere en cours est jouable.',
           },
           serverNow: new Date().toISOString(),
-          current: schedule.current
+          current: schedule.current,
         });
       }
 
       if (Number.isFinite(slotStartMs) && now < slotStartMs) {
         return res.status(409).json({
           ok: false,
-          error: { code: 'NOT_STARTED', message: 'Le quiz de cette matiere n\'a pas encore commence.' },
+          error: { code: 'NOT_STARTED', message: "Le quiz de cette matiere n'a pas encore commence." },
           serverNow: new Date().toISOString(),
-          startsAt: slot.startAt
+          startsAt: slot.startAt,
         });
       }
 
-      if (Number.isFinite(slotEndMs) && now >= slotEndMs) {
+      if (!questionWindow || (Number.isFinite(quizEndMs) && now >= quizEndMs)) {
         return res.status(409).json({
           ok: false,
           error: { code: 'ENDED', message: 'Le quiz de cette matiere est termine.' },
           serverNow: new Date().toISOString(),
-          endedAt: slot.endAt
+          endedAt: new Date(quizEndMs).toISOString(),
         });
       }
     }
@@ -276,14 +285,14 @@ export async function startSubjectRun(req, res, next) {
       id_user: userId,
       id_classe: classRow.id_classe,
       id_serie: room.id_serie,
-      id_matiere: subjectId
+      id_matiere: subjectId,
     });
 
     if (run?.submitted_at) {
       return res.status(409).json({
         ok: false,
         error: { code: 'ALREADY_SUBMITTED', message: 'Tu as deja compose cette matiere.' },
-        run
+        run,
       });
     }
 
@@ -295,7 +304,7 @@ export async function startSubjectRun(req, res, next) {
         id_classe: classRow.id_classe,
         id_serie: room.id_serie,
         id_matiere: subjectId,
-        total_questions: questionsPerSubject
+        total_questions: questionsPerSubject,
       });
     }
 
@@ -306,7 +315,7 @@ export async function startSubjectRun(req, res, next) {
         id_classe: classRow.id_classe,
         id_type: room.id_type,
         id_matiere: subjectId,
-        limit: questionsPerSubject
+        limit: questionsPerSubject,
       });
 
       if (quizIds.length < questionsPerSubject) {
@@ -314,8 +323,8 @@ export async function startSubjectRun(req, res, next) {
           ok: false,
           error: {
             code: 'NOT_ENOUGH_QUIZ',
-            message: `Pas assez de quiz pour cette matiere (${quizIds.length}/${questionsPerSubject}).`
-          }
+            message: `Pas assez de quiz pour cette matiere (${quizIds.length}/${questionsPerSubject}).`,
+          },
         });
       }
 
@@ -341,14 +350,14 @@ export async function startSubjectRun(req, res, next) {
       quiz: {
         secondsPerQuestion,
         questionsPerSubject,
-        durationSeconds: secondsPerQuestion * questionsPerSubject
+        durationSeconds: secondsPerQuestion * questionsPerSubject,
       },
       run: {
         id_run: run.id_run,
         started_at: run.started_at,
-        submitted_at: run.submitted_at
+        submitted_at: run.submitted_at,
       },
-      questions
+      questions,
     });
   } catch (err) {
     return next(err);
@@ -366,7 +375,7 @@ export async function submitRun(req, res, next) {
     if (!runId || !userId) {
       return res.status(400).json({
         ok: false,
-        error: { code: 'BAD_REQUEST', message: 'Champs requis: runId + userId' }
+        error: { code: 'BAD_REQUEST', message: 'Champs requis: runId + userId' },
       });
     }
 
@@ -374,14 +383,14 @@ export async function submitRun(req, res, next) {
     if (!run) {
       return res.status(404).json({
         ok: false,
-        error: { code: 'NOT_FOUND', message: 'Run introuvable' }
+        error: { code: 'NOT_FOUND', message: 'Run introuvable' },
       });
     }
 
     if (String(run.id_user) !== userId) {
       return res.status(403).json({
         ok: false,
-        error: { code: 'FORBIDDEN', message: 'Run non autorise' }
+        error: { code: 'FORBIDDEN', message: 'Run non autorise' },
       });
     }
 
@@ -389,7 +398,7 @@ export async function submitRun(req, res, next) {
       return res.status(409).json({
         ok: false,
         error: { code: 'ALREADY_SUBMITTED', message: 'Ce run est deja soumis.' },
-        run
+        run,
       });
     }
 
@@ -415,7 +424,7 @@ export async function submitRun(req, res, next) {
       answersByQuizId.set(quizId, {
         id_quiz: quizId,
         id_options: optionId,
-        response_time_ms: responseTimeMs
+        response_time_ms: responseTimeMs,
       });
     }
 
@@ -440,7 +449,7 @@ export async function submitRun(req, res, next) {
         id_quiz: quizId,
         id_options: a.id_options,
         is_correct: isCorrect,
-        response_time_ms: a.response_time_ms
+        response_time_ms: a.response_time_ms,
       });
     }
 
@@ -453,7 +462,7 @@ export async function submitRun(req, res, next) {
       id_run: runId,
       correct_count: correctCount,
       total_response_time_ms: totalResponseTimeMs,
-      score_percent: scorePercent
+      score_percent: scorePercent,
     });
 
     return res.json({
@@ -464,8 +473,8 @@ export async function submitRun(req, res, next) {
         total_questions: Number(updated.total_questions),
         correct_count: Number(updated.correct_count),
         score_percent: Number(updated.score_percent),
-        total_response_time_ms: Number(updated.total_response_time_ms)
-      }
+        total_response_time_ms: Number(updated.total_response_time_ms),
+      },
     });
   } catch (err) {
     return next(err);
@@ -480,7 +489,7 @@ export async function leaderboard(req, res, next) {
     if (!roomId || !classe) {
       return res.status(400).json({
         ok: false,
-        error: { code: 'BAD_REQUEST', message: 'Parametres requis: roomId + ?classe=' }
+        error: { code: 'BAD_REQUEST', message: 'Parametres requis: roomId + ?classe=' },
       });
     }
 
@@ -492,7 +501,7 @@ export async function leaderboard(req, res, next) {
       week_key: desiredWeekKey || weekKey,
       id_classe: classRow.id_classe,
       id_serie: room.id_serie,
-      limit: req.query?.limit
+      limit: req.query?.limit,
     });
 
     return res.json({
@@ -502,12 +511,9 @@ export async function leaderboard(req, res, next) {
       room,
       count: leaderboardRows.length,
       winners: leaderboardRows.slice(0, 3),
-      leaderboard: leaderboardRows
+      leaderboard: leaderboardRows,
     });
   } catch (err) {
     return next(err);
   }
 }
-
-
-
