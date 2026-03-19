@@ -1,4 +1,4 @@
-ï»¿import fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 
 import 'dotenv/config';
 
@@ -68,12 +68,12 @@ function buildQuestion(question, options, correctIndex) {
 const fallbackTemplates = {
   maths: [
     buildQuestion('Quelle est la valeur de x dans 2x + 3 = 11 ?', ['2', '3', '4', '5'], 2),
-    buildQuestion('Quelle est l aire d un rectangle de 6 cm sur 4 cm ?', ['10 cmÂ²', '20 cmÂ²', '24 cmÂ²', '28 cmÂ²'], 2),
+    buildQuestion('Quelle est l aire d un rectangle de 6 cm sur 4 cm ?', ['10 cm²', '20 cm²', '24 cm²', '28 cm²'], 2),
     buildQuestion('Quelle fraction est equivalente a 3/4 ?', ['6/12', '9/12', '12/20', '15/16'], 1),
-    buildQuestion('Combien vaut 5Â² ?', ['10', '20', '25', '30'], 2),
+    buildQuestion('Combien vaut 5² ?', ['10', '20', '25', '30'], 2),
     buildQuestion('Quelle est la moyenne de 4, 6 et 8 ?', ['5', '6', '7', '8'], 1),
     buildQuestion('Si a = 4, combien vaut 3(a + 2) ?', ['12', '15', '18', '24'], 2),
-    buildQuestion('Dans un triangle rectangle, le plus grand cote s appelle :', ['La hauteur', 'La mediane', 'L hypotÃ©nuse', 'La base'], 2),
+    buildQuestion('Dans un triangle rectangle, le plus grand cote s appelle :', ['La hauteur', 'La mediane', 'L hypoténuse', 'La base'], 2),
     buildQuestion('20 % de 50 vaut :', ['5', '10', '15', '20'], 1),
     buildQuestion('1 kilometre correspond a :', ['100 m', '500 m', '1000 m', '10 000 m'], 2),
     buildQuestion('Combien vaut -3 + 7 ?', ['-10', '4', '10', '-4'], 1),
@@ -132,7 +132,7 @@ const fallbackTemplates = {
     buildQuestion('Le sang transporte notamment :', ['des roches', 'de l oxygene et des nutriments', 'du sable', 'de la lumiere'], 1),
     buildQuestion('L organe principal de la respiration chez l humain est :', ['le coeur', 'le foie', 'les poumons', 'le rein'], 2),
     buildQuestion('Dans une chaine alimentaire, un herbivore mange principalement :', ['des animaux', 'des plantes', 'des champignons uniquement', 'des roches'], 1),
-    buildQuestion('Le role de la chlorophylle est de :', ['donner du calcium aux os', 'capter l energie lumineuse', 'digÃ©rer les aliments', 'produire du sang'], 1),
+    buildQuestion('Le role de la chlorophylle est de :', ['donner du calcium aux os', 'capter l energie lumineuse', 'digérer les aliments', 'produire du sang'], 1),
     buildQuestion('La vaccination permet surtout de :', ['provoquer une maladie grave', 'stimuler les defenses immunitaires', 'remplacer le sang', 'arreter la croissance'], 1),
     buildQuestion('Un ecosysteme comprend :', ['seulement les animaux', 'seulement les plantes', 'les etres vivants et leur milieu', 'uniquement le sol'], 2),
     buildQuestion('A la puberte, les changements du corps sont commandes en grande partie par :', ['les os', 'les hormones', 'les dents', 'les cheveux'], 1),
@@ -188,8 +188,7 @@ function buildFallbackQuestions(programme) {
 async function extractLocalQuizBank(filePath) {
   const source = await fs.readFile(filePath, 'utf8');
   const saRegex = /INSERT OR IGNORE INTO sa \(nom_sa, id_programme\) VALUES \('((?:''|[^'])*)', \(SELECT id_programme FROM programme WHERE id_matiere=\(SELECT id_matiere FROM matieres WHERE nom_matiere='((?:''|[^'])*)'\) AND id_classe=\(SELECT id_classe FROM classes WHERE nom_classe='((?:''|[^'])*)'\)(?: AND id_type=\(SELECT id_type FROM type_series WHERE nom_type='((?:''|[^'])*)'\))?\)\);/g;
-  const quizRegex = /INSERT INTO quiz \(question, id_sa\) VALUES \('((?:''|[^'])*)', (\d+)\);/g;
-  const optionRegex = /INSERT INTO options \(opt_text, is_correct, id_quiz\) VALUES \('((?:''|[^'])*)', ([01]), (\d+)\);/g;
+  const entryRegex = /INSERT INTO quiz \(question, id_sa\) VALUES \('((?:''|[^'])*)', (\\d+)\);|INSERT INTO options \(opt_text, is_correct, id_quiz\) VALUES \('((?:''|[^'])*)', ([01]), (\\d+)\);/g;
 
   const saById = [];
   for (const match of source.matchAll(saRegex)) {
@@ -201,34 +200,34 @@ async function extractLocalQuizBank(filePath) {
     });
   }
 
-  const quizzesById = new Map();
   const grouped = new Map();
-  let localQuizId = 0;
-  for (const match of source.matchAll(quizRegex)) {
-    localQuizId += 1;
-    const saId = Number(match[2]);
-    const sa = saById[saId - 1];
-    if (!sa) continue;
+  let currentQuiz = null;
+  for (const match of source.matchAll(entryRegex)) {
+    const questionText = match[1];
+    if (questionText !== undefined) {
+      const saId = Number(match[2]);
+      const sa = saById[saId - 1];
+      if (!sa) {
+        currentQuiz = null;
+        continue;
+      }
 
-    const quiz = {
-      localQuizId,
-      question: cleanText(match[1]),
-      options: [],
-      sa,
-    };
-    quizzesById.set(localQuizId, quiz);
+      currentQuiz = {
+        question: cleanText(questionText),
+        options: [],
+        sa,
+      };
 
-    const key = keyOf(sa.nom_classe, sa.nom_matiere, sa.nom_type);
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key).push(quiz);
-  }
+      const key = keyOf(sa.nom_classe, sa.nom_matiere, sa.nom_type);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(currentQuiz);
+      continue;
+    }
 
-  for (const match of source.matchAll(optionRegex)) {
-    const quiz = quizzesById.get(Number(match[3]));
-    if (!quiz) continue;
-    quiz.options.push({
-      text: cleanText(match[1]),
-      isCorrect: Number(match[2]) === 1,
+    if (!currentQuiz) continue;
+    currentQuiz.options.push({
+      text: cleanText(match[3]),
+      isCorrect: Number(match[4]) === 1,
     });
   }
 
