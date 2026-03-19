@@ -67,32 +67,37 @@ export function computeQuestionWindow({
   if (Number.isNaN(nowDate.getTime())) return null;
 
   const questionDurationMs = Math.max(1, Number(secondsPerQuestion)) * 1000;
-  const runDurationMs = questionDurationMs * Math.max(1, Number(totalQuestions));
-  const questionEndMs = slotStartMs + runDurationMs;
+  const baseRunEndMs = slotStartMs + questionDurationMs * Math.max(1, Number(totalQuestions));
+  const slotEndMs = Date.parse(slot.endAt);
+  const runEndMs = Number.isFinite(slotEndMs) && slotEndMs > baseRunEndMs ? slotEndMs : baseRunEndMs;
   const nowMs = nowDate.getTime();
 
-  if (nowMs < slotStartMs || nowMs >= questionEndMs) {
+  if (nowMs < slotStartMs || nowMs >= runEndMs) {
     return null;
   }
 
   const elapsedMs = nowMs - slotStartMs;
+  const rawIndex = Math.floor(elapsedMs / questionDurationMs);
   const questionIndex = Math.min(
     Math.max(0, totalQuestions - 1),
-    Math.floor(elapsedMs / questionDurationMs),
+    rawIndex,
   );
-  const elapsedInQuestionMs = elapsedMs - questionIndex * questionDurationMs;
+  const questionStartMs = slotStartMs + questionIndex * questionDurationMs;
+  const questionEndMs = questionIndex >= totalQuestions - 1
+    ? runEndMs
+    : Math.min(runEndMs, questionStartMs + questionDurationMs);
   const remainingSeconds = Math.max(
     0,
-    Math.ceil((questionDurationMs - elapsedInQuestionMs) / 1000),
+    Math.ceil((questionEndMs - nowMs) / 1000),
   );
 
   return {
     questionIndex,
     remainingSeconds,
-    missedQuestions: Math.max(0, questionIndex),
-    questionStartAt: new Date(slotStartMs + questionIndex * questionDurationMs).toISOString(),
-    questionEndAt: new Date(slotStartMs + (questionIndex + 1) * questionDurationMs).toISOString(),
-    runEndAt: new Date(questionEndMs).toISOString(),
+    missedQuestions: Math.max(0, Math.min(totalQuestions - 1, rawIndex)),
+    questionStartAt: new Date(questionStartMs).toISOString(),
+    questionEndAt: new Date(questionEndMs).toISOString(),
+    runEndAt: new Date(runEndMs).toISOString(),
   };
 }
 

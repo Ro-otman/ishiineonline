@@ -177,7 +177,10 @@ export async function startSubjectRun(req, res, next) {
       totalQuestions: questionsPerSubject,
       now: new Date(now),
     });
-    const quizEndMs = slotStartMs + secondsPerQuestion * questionsPerSubject * 1000;
+    const slotEndMs = Date.parse(slot.endAt);
+    const quizEndMs = Number.isFinite(slotEndMs)
+      ? slotEndMs
+      : slotStartMs + secondsPerQuestion * questionsPerSubject * 1000;
 
     if (!devBypass) {
       const user = await getUserById(userId);

@@ -279,7 +279,11 @@ async function emitRunState(io, key, runId, targetSocketId = null) {
       };
     } else {
       const slotStartMs = Date.parse(slot.startAt);
-      const runEndMs = slotStartMs + context.secondsPerQuestion * totalQuestions * 1000;
+      const configuredSlotEndMs = Date.parse(slot.endAt);
+      const baseRunEndMs = slotStartMs + context.secondsPerQuestion * totalQuestions * 1000;
+      const runEndMs = Number.isFinite(configuredSlotEndMs) && configuredSlotEndMs > baseRunEndMs
+        ? configuredSlotEndMs
+        : baseRunEndMs;
       const beforeStart = Number.isFinite(slotStartMs) && now.getTime() < slotStartMs;
       payload = {
         runId,
