@@ -128,8 +128,30 @@ export async function finalizeLigueRun({ id_run, correct_count, total_response_t
   return getLigueRunById(id_run);
 }
 
-export async function getLigueLeaderboard({ week_key, id_classe, id_serie, limit = 50 }) {
-  const safeLimit = Number.parseInt(String(limit ?? 50), 10);
+export async function getLigueLeaderboard({
+  week_key,
+  id_classe,
+  id_serie,
+  expected_subjects = 0,
+  questions_per_subject = 0,
+  seconds_per_question = 0,
+  limit = 50
+}) {
+  const parsedLimit = Number.parseInt(String(limit ?? 50), 10);
+  const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50;
+  const expectedSubjects = Math.max(
+    1,
+    Number.parseInt(String(expected_subjects ?? 0), 10) || 0,
+  );
+  const questionsPerSubject = Math.max(
+    1,
+    Number.parseInt(String(questions_per_subject ?? 0), 10) || 0,
+  );
+  const secondsPerQuestion = Math.max(
+    1,
+    Number.parseInt(String(seconds_per_question ?? 0), 10) || 0,
+  );
+  const maxTimePerSubjectMs = questionsPerSubject * secondsPerQuestion * 1000;
 
   const rows = await execute(
     `
@@ -141,9 +163,7 @@ export async function getLigueLeaderboard({ week_key, id_classe, id_serie, limit
         SUM(lr.correct_count) AS correct_total,
         SUM(lr.total_questions) AS questions_total,
         SUM(lr.total_response_time_ms) AS time_total,
-        COUNT(*) AS subjects_played,
-        (SUM(lr.correct_count) / NULLIF(SUM(lr.total_questions), 0)) * 100 AS score_percent,
-        (SUM(lr.correct_count) / NULLIF(SUM(lr.total_questions), 0)) * 20 AS average_on_20
+        COUNT(*) AS subjects_played
       FROM ligue_runs lr
       JOIN users u ON u.id_users = lr.id_user
       WHERE lr.week_key = ?
@@ -151,24 +171,51 @@ export async function getLigueLeaderboard({ week_key, id_classe, id_serie, limit
         AND lr.id_serie = ?
         AND lr.submitted_at IS NOT NULL
       GROUP BY lr.id_user, u.nom, u.prenoms, u.img_path
-      ORDER BY average_on_20 DESC, time_total ASC
-      LIMIT ?
     `,
-    [week_key, id_classe, id_serie, safeLimit],
+    [week_key, id_classe, id_serie],
   );
 
-  return rows.map((r, index) => ({
+  const leaderboard = rows
+    .map((row) => {
+      const correctTotal = Number(row.correct_total ?? 0);
+      const questionsTotal = Number(row.questions_total ?? 0);
+      const timeTotal = Number(row.time_total ?? 0);
+      const subjectsPlayed = Number(row.subjects_played ?? 0);
+      const rawPercent = questionsTotal > 0 ? (correctTotal / questionsTotal) * 100 : 0;
+      const speedBonusTotal = maxTimePerSubjectMs > 0
+        ? Math.max(0, (2 * subjectsPlayed) - ((2 * timeTotal) / maxTimePerSubjectMs))
+        : 0;
+      const averageOn20 = Math.max(
+        0,
+        Math.min(
+          20,
+          (((20 * correctTotal) / questionsPerSubject) + speedBonusTotal) /
+            expectedSubjects,
+        ),
+      );
+
+      return {
+        id_user: row.id_user,
+        nom: row.nom,
+        prenoms: row.prenoms,
+        img_path: row.img_path,
+        correct_total: correctTotal,
+        questions_total: questionsTotal,
+        time_total: timeTotal,
+        subjects_played: subjectsPlayed,
+        score_percent: rawPercent,
+        average_on_20: averageOn20,
+      };
+    })
+    .sort((a, b) => (
+      b.average_on_20 - a.average_on_20
+      || a.time_total - b.time_total
+      || b.subjects_played - a.subjects_played
+      || String(a.id_user ?? '').localeCompare(String(b.id_user ?? ''))
+    ));
+
+  return leaderboard.slice(0, safeLimit).map((row, index) => ({
     rank: index + 1,
-    id_user: r.id_user,
-    nom: r.nom,
-    prenoms: r.prenoms,
-    img_path: r.img_path,
-    correct_total: Number(r.correct_total ?? 0),
-    questions_total: Number(r.questions_total ?? 0),
-    time_total: Number(r.time_total ?? 0),
-    subjects_played: Number(r.subjects_played ?? 0),
-    score_percent: Number(r.score_percent ?? 0),
-    average_on_20: Number(r.average_on_20 ?? 0)
+    ...row,
   }));
 }
-

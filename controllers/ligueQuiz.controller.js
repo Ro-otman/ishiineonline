@@ -498,12 +498,15 @@ export async function leaderboard(req, res, next) {
 
     const desiredWeekKey = asString(req.query?.weekKey).trim();
 
-    const { room, classRow, weekKey } = await resolveContext({ roomId, classe });
+    const { room, classRow, weekKey, schedule, questionsPerSubject, secondsPerQuestion } = await resolveContext({ roomId, classe });
 
     const leaderboardRows = await getLigueLeaderboard({
       week_key: desiredWeekKey || weekKey,
       id_classe: classRow.id_classe,
       id_serie: room.id_serie,
+      expected_subjects: Array.isArray(schedule?.slots) ? schedule.slots.length : 0,
+      questions_per_subject: questionsPerSubject,
+      seconds_per_question: secondsPerQuestion,
       limit: req.query?.limit,
     });
 
