@@ -1,0 +1,407 @@
+import { env } from '../config/env.js';
+import { activateUserSubscription, getUserById } from '../models/users.model.js';
+
+const DEFAULT_API_BASE_URL = 'https://api.fedapay.com/v1';
+const DEFAULT_PLAN = 'premium_monthly';
+
+function asString(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim();
+}
+
+function toInt(value, fallback = 0) {
+  const parsed = Number.parseInt(asString(value), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toUrl(value) {
+  const text = asString(value);
+  if (!text) return null;
+  try {
+    return new URL(text);
+  } catch {
+    return null;
+  }
+}
+
+function buildError(message, statusCode = 400, code = 'BAD_REQUEST', details) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  err.code = code;
+  if (details !== undefined) {
+    err.details = details;
+  }
+  return err;
+}
+
+function inferBaseUrl(req) {
+  const configured = asString(env.PAYMENT_CALLBACK_BASE_URL);
+  if (configured) {
+    return configured.replace(/\/+$/, '');
+  }
+  const protocol = req.protocol || 'https';
+  const host = req.get('host');
+  if (!host) {
+    throw buildError(
+      'Impossible de determiner l URL publique du backend.',
+      500,
+      'PAYMENT_BASE_URL_MISSING',
+    );
+  }
+  return `${protocol}://${host}`;
+}
+
+function resolvePlanConfig(plan) {
+  const normalized = asString(plan) || DEFAULT_PLAN;
+  if (normalized !== DEFAULT_PLAN) {
+    throw buildError('Plan de paiement non supporte.', 400, 'UNSUPPORTED_PLAN');
+  }
+  return {
+    key: DEFAULT_PLAN,
+    amount: toInt(env.PAYMENT_PREMIUM_AMOUNT, 375),
+    currencyIso: asString(env.PAYMENT_CURRENCY_ISO || 'XOF') || 'XOF',
+    description:
+      asString(env.PAYMENT_PREMIUM_DESCRIPTION) || 'Abonnement mensuel',
+    durationDays: toInt(env.PAYMENT_DURATION_DAYS, 30),
+  };
+}
+
+function sanitizeCustomer(customer = {}) {
+  const firstname = asString(customer.firstname || customer.firstName);
+  const lastname = asString(customer.lastname || customer.lastName);
+  const email = asString(customer.email);
+  const phoneBlock = customer.phone_number || customer.phoneNumber || {};
+  const phoneNumber = asString(phoneBlock.number || customer.phone);
+  const country = asString(phoneBlock.country || customer.country || 'bj').toLowerCase();
+
+  if (!firstname || !lastname || !phoneNumber) {
+    throw buildError(
+      'Informations client incompletes pour initier le paiement.',
+      400,
+      'CUSTOMER_REQUIRED',
+    );
+  }
+
+  return {
+    firstname,
+    lastname,
+    email: email || undefined,
+    phone_number: {
+      number: phoneNumber,
+      country: country || 'bj',
+    },
+  };
+}
+
+function getFedapayConfig() {
+  const secretKey = asString(env.FEDAPAY_SECRET_KEY);
+  if (!secretKey) {
+    throw buildError(
+      'FEDAPAY_SECRET_KEY n est pas configuree sur le backend.',
+      500,
+      'FEDAPAY_CONFIG_MISSING',
+    );
+  }
+
+  return {
+    apiBaseUrl:
+      asString(env.FEDAPAY_API_BASE_URL).replace(/\/+$/, '') || DEFAULT_API_BASE_URL,
+    secretKey,
+  };
+}
+
+async function fedapayRequest(path, { method = 'GET', body } = {}) {
+  const { apiBaseUrl, secretKey } = getFedapayConfig();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(`${apiBaseUrl}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {
+      data = null;
+    }
+    if (!response.ok) {
+      throw buildError(
+        data?.message || `FedaPay a repondu avec le statut ${response.status}.`,
+        response.status >= 400 && response.status < 500 ? 400 : 502,
+        'FEDAPAY_REQUEST_FAILED',
+        { status: response.status, body: data ?? raw },
+      );
+    }
+    return data ?? {};
+  } catch (error) {
+    if (error?.name == 'AbortError') {
+      throw buildError('FedaPay met trop de temps a repondre.', 504, 'FEDAPAY_TIMEOUT');
+    }
+    if (error?.code) {
+      throw error;
+    }
+    throw buildError(
+      error?.message || 'Impossible de joindre FedaPay.',
+      502,
+      'FEDAPAY_UNREACHABLE',
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function buildCallbackUrl(req, { userId, planKey }) {
+  const callback = new URL(`${inferBaseUrl(req)}/api/shiine_checkout`);
+  callback.searchParams.set('userId', userId);
+  callback.searchParams.set('plan', planKey);
+  return callback.toString();
+}
+
+function extractTransactionEnvelope(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  return (
+    payload['v1/transaction'] ||
+    payload.transaction ||
+    payload.trx ||
+    payload.data?.transaction ||
+    payload.data?.trx ||
+    payload.data ||
+    null
+  );
+}
+
+function extractPaymentUrl(payload) {
+  const tx = extractTransactionEnvelope(payload) || {};
+  return (
+    asString(payload.payment_url) ||
+    asString(payload.paymentUrl) ||
+    asString(payload.checkout_url) ||
+    asString(payload.checkoutUrl) ||
+    asString(tx.payment_url) ||
+    asString(tx.paymentUrl) ||
+    asString(tx.url) ||
+    ''
+  );
+}
+
+function extractTransactionId(payload) {
+  const tx = extractTransactionEnvelope(payload) || {};
+  return (
+    asString(payload.transaction_id) ||
+    asString(payload.transactionId) ||
+    asString(tx.id) ||
+    asString(tx.transaction_id) ||
+    ''
+  );
+}
+
+function extractStatus(payload) {
+  const tx = extractTransactionEnvelope(payload) || {};
+  return (
+    asString(payload.status) ||
+    asString(tx.status) ||
+    ''
+  ).toLowerCase();
+}
+
+function collectQueryValue(query, key) {
+  if (!query || typeof query !== 'object') return '';
+  const raw = query[key];
+  if (Array.isArray(raw)) return asString(raw[0]);
+  return asString(raw);
+}
+
+function extractTransactionIdFromCallback({ callbackUrl, query, explicitTransactionId }) {
+  const direct = asString(explicitTransactionId);
+  if (direct) return direct;
+
+  const candidates = [
+    collectQueryValue(query, 'id'),
+    collectQueryValue(query, 'transaction_id'),
+    collectQueryValue(query, 'transactionId'),
+    collectQueryValue(query, 'trx_id'),
+    collectQueryValue(query, 'payment_id'),
+  ].filter(Boolean);
+
+  const parsedUrl = toUrl(callbackUrl);
+  if (parsedUrl) {
+    candidates.push(
+      asString(parsedUrl.searchParams.get('id')),
+      asString(parsedUrl.searchParams.get('transaction_id')),
+      asString(parsedUrl.searchParams.get('transactionId')),
+      asString(parsedUrl.searchParams.get('trx_id')),
+      asString(parsedUrl.searchParams.get('payment_id')),
+    );
+  }
+
+  return candidates.find(Boolean) || '';
+}
+
+function extractStatusFromCallback({ callbackUrl, query }) {
+  const candidates = [
+    collectQueryValue(query, 'status'),
+    collectQueryValue(query, 'payment_status'),
+    collectQueryValue(query, 'transaction_status'),
+  ].filter(Boolean);
+
+  const parsedUrl = toUrl(callbackUrl);
+  if (parsedUrl) {
+    candidates.push(
+      asString(parsedUrl.searchParams.get('status')),
+      asString(parsedUrl.searchParams.get('payment_status')),
+      asString(parsedUrl.searchParams.get('transaction_status')),
+    );
+  }
+
+  return (candidates.find(Boolean) || '').toLowerCase();
+}
+
+async function markSubscriptionApproved(userId, durationDays) {
+  const user = await getUserById(userId);
+  if (!user) {
+    return { updated: false, user: null };
+  }
+  const updatedUser = await activateUserSubscription({ userId, durationDays });
+  return { updated: true, user: updatedUser };
+}
+
+export async function createPaymentCheckout({ req, userId, plan, customer }) {
+  const safeUserId = asString(userId);
+  if (!safeUserId) {
+    throw buildError('userId requis.', 400, 'USER_ID_REQUIRED');
+  }
+
+  const planConfig = resolvePlanConfig(plan);
+  const safeCustomer = sanitizeCustomer(customer);
+  const callbackUrl = buildCallbackUrl(req, {
+    userId: safeUserId,
+    planKey: planConfig.key,
+  });
+
+  const payload = {
+    description: planConfig.description,
+    amount: planConfig.amount,
+    currency: { iso: planConfig.currencyIso },
+    callback_url: callbackUrl,
+    customer: safeCustomer,
+    metadata: {
+      user_id: safeUserId,
+      plan: planConfig.key,
+    },
+  };
+
+  const response = await fedapayRequest('/transactions', {
+    method: 'POST',
+    body: payload,
+  });
+
+  const paymentUrl = extractPaymentUrl(response);
+  const transactionId = extractTransactionId(response);
+  if (!paymentUrl) {
+    throw buildError(
+      'FedaPay n a pas renvoye d URL de paiement.',
+      502,
+      'FEDAPAY_PAYMENT_URL_MISSING',
+      response,
+    );
+  }
+
+  return {
+    paymentUrl,
+    transactionId: transactionId || null,
+    callbackUrl,
+    plan: planConfig.key,
+  };
+}
+
+export async function verifyPaymentCheckout({
+  userId,
+  callbackUrl,
+  query,
+  transactionId,
+}) {
+  const safeUserId = asString(userId);
+  if (!safeUserId) {
+    throw buildError('userId requis.', 400, 'USER_ID_REQUIRED');
+  }
+
+  const callbackStatus = extractStatusFromCallback({ callbackUrl, query });
+  const effectiveTransactionId = extractTransactionIdFromCallback({
+    callbackUrl,
+    query,
+    explicitTransactionId: transactionId,
+  });
+
+  if (!effectiveTransactionId) {
+    return {
+      approved: false,
+      transactionId: null,
+      status: callbackStatus || null,
+      message:
+        callbackStatus === 'approved'
+          ? 'Transaction FedaPay introuvable dans le callback.'
+          : 'Paiement non approuve.',
+      subscriptionUpdated: false,
+    };
+  }
+
+  const response = await fedapayRequest(`/transactions/${encodeURIComponent(effectiveTransactionId)}`);
+  const status = extractStatus(response);
+  const approved = status === 'approved';
+  let subscriptionUpdated = false;
+
+  if (approved) {
+    const planConfig = resolvePlanConfig(DEFAULT_PLAN);
+    const activation = await markSubscriptionApproved(safeUserId, planConfig.durationDays);
+    subscriptionUpdated = activation.updated;
+  }
+
+  return {
+    approved,
+    transactionId: effectiveTransactionId,
+    status: status || callbackStatus || null,
+    message: approved
+      ? subscriptionUpdated
+        ? 'Paiement confirme et abonnement active.'
+        : 'Paiement confirme. Utilisateur non trouve cote backend, abonnement non mis a jour ici.'
+      : 'Paiement non approuve par FedaPay.',
+    subscriptionUpdated,
+  };
+}
+
+export async function handlePaymentWebhook(body = {}) {
+  const transactionId = extractTransactionId(body);
+  const status = extractStatus(body);
+  const tx = extractTransactionEnvelope(body) || {};
+  const userId = asString(
+    body?.metadata?.user_id ||
+      tx?.metadata?.user_id ||
+      body?.userId ||
+      tx?.userId,
+  );
+
+  if (!transactionId || status !== 'approved' || !userId) {
+    return {
+      accepted: false,
+      transactionId: transactionId || null,
+      status: status || null,
+    };
+  }
+
+  const planConfig = resolvePlanConfig(DEFAULT_PLAN);
+  const activation = await markSubscriptionApproved(userId, planConfig.durationDays);
+  return {
+    accepted: true,
+    transactionId,
+    status,
+    subscriptionUpdated: activation.updated,
+  };
+}

@@ -45,6 +45,28 @@ export async function rekeyUserId({ fromUserId, toUserId }) {
   return getUserById(targetId);
 }
 
+export async function activateUserSubscription({ userId, durationDays = 30 }) {
+  const safeUserId = String(userId ?? '').trim();
+  if (!safeUserId) return null;
+
+  const now = new Date();
+  const expiry = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+  await execute(
+    `
+      UPDATE users
+      SET
+        is_subscribed = 1,
+        subscription_date = ?,
+        subscription_expiry = ?
+      WHERE id_users = ?
+    `,
+    [now.toISOString(), expiry.toISOString(), safeUserId],
+  );
+
+  return getUserById(safeUserId);
+}
+
 export async function upsertUser(user) {
   await execute(
     `

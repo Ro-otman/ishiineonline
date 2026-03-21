@@ -37,5 +37,15 @@ export const env = {
   // SSL
   DB_SSL: toBool(process.env.DB_SSL, false),
   DB_SSL_REJECT_UNAUTHORIZED: toBool(process.env.DB_SSL_REJECT_UNAUTHORIZED, true),
-  DB_SSL_CA_PATH: process.env.DB_SSL_CA_PATH || ''
+  DB_SSL_CA_PATH: process.env.DB_SSL_CA_PATH || '',
+
+  // Payments
+  FEDAPAY_API_BASE_URL: process.env.FEDAPAY_API_BASE_URL || 'https://api.fedapay.com/v1',
+  FEDAPAY_SECRET_KEY: process.env.FEDAPAY_SECRET_KEY || '',
+  PAYMENT_CALLBACK_BASE_URL: process.env.PAYMENT_CALLBACK_BASE_URL || '',
+  PAYMENT_PREMIUM_AMOUNT: toInt(process.env.PAYMENT_PREMIUM_AMOUNT, 375),
+  PAYMENT_PREMIUM_DESCRIPTION:
+    process.env.PAYMENT_PREMIUM_DESCRIPTION || 'Abonnement mensuel',
+  PAYMENT_CURRENCY_ISO: process.env.PAYMENT_CURRENCY_ISO || 'XOF',
+  PAYMENT_DURATION_DAYS: toInt(process.env.PAYMENT_DURATION_DAYS, 30)
 };

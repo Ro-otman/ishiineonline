@@ -1,4 +1,6 @@
-﻿function escapeHtml(value) {
+import { handlePaymentWebhook } from '../services/paymentCheckout.service.js';
+
+function escapeHtml(value) {
   return String(value)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -7,9 +9,9 @@
     .replaceAll("'", '&#39;');
 }
 
-export function shiineCheckout(req, res) {
+export function renderCheckoutCallback(req, res) {
   const status = escapeHtml(req.query?.status ?? 'ok');
-  const message = escapeHtml(req.query?.message ?? 'Paiement traité.');
+  const message = escapeHtml(req.query?.message ?? 'Paiement traite.');
 
   res.status(200);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -32,11 +34,26 @@ export function shiineCheckout(req, res) {
   </head>
   <body>
     <div class="card">
-      <span class="badge ${status === 'ok' || status === 'success' ? 'ok' : 'ko'}">${status}</span>
+      <span class="badge ${status === 'ok' || status === 'success' || status === 'approved' ? 'ok' : 'ko'}">${status}</span>
       <h1>${message}</h1>
-      <p>Tu peux retourner dans l'application.</p>
+      <p>Tu peux retourner dans l application.</p>
       <p class="hint">(Cette page sert de callback: /shiine_checkout)</p>
     </div>
   </body>
 </html>`);
+}
+
+export async function receiveCheckoutWebhook(req, res, next) {
+  try {
+    const result = await handlePaymentWebhook(req.body || {});
+    res.status(200).json({
+      ok: true,
+      accepted: result.accepted,
+      transaction_id: result.transactionId,
+      status: result.status,
+      subscriptionUpdated: result.subscriptionUpdated || false,
+    });
+  } catch (err) {
+    next(err);
+  }
 }

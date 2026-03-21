@@ -1,9 +1,13 @@
-﻿import { Router } from 'express';
+import { Router } from 'express';
 
-import { shiineCheckout } from '../controllers/checkout.controller.js';
+import {
+  receiveCheckoutWebhook,
+  renderCheckoutCallback,
+} from '../controllers/checkout.controller.js';
 
 const router = Router();
 
-router.all('/', shiineCheckout);
+router.get('/', renderCheckoutCallback);
+router.post('/', receiveCheckoutWebhook);
 
 export default router;
