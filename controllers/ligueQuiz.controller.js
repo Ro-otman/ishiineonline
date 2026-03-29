@@ -2,6 +2,7 @@
 
 import { getUserById } from '../models/users.model.js';
 import {
+  findLatestNonEmptyLeaderboardWeekKey,
   createLigueRun,
   finalizeLigueRun,
   getLigueLeaderboard,
@@ -467,17 +468,40 @@ export async function leaderboard(req, res, next) {
 
     const desiredWeekKey = asString(req.query?.weekKey).trim();
     const { room, classRow, weekKey } = await resolveContext({ roomId, classe });
+    let effectiveWeekKey = desiredWeekKey || weekKey;
 
-    const leaderboardRows = await getLigueLeaderboard({
-      week_key: desiredWeekKey || weekKey,
+    let leaderboardRows = await getLigueLeaderboard({
+      week_key: effectiveWeekKey,
       id_classe: classRow.id_classe,
       id_serie: room.id_serie,
       limit: req.query?.limit,
     });
 
+    if (!desiredWeekKey && leaderboardRows.length === 0) {
+      const fallbackWeekKey = await findLatestNonEmptyLeaderboardWeekKey({
+        id_classe: classRow.id_classe,
+        id_serie: room.id_serie,
+        beforeOrEqualWeekKey: effectiveWeekKey,
+      });
+
+      if (fallbackWeekKey && fallbackWeekKey !== effectiveWeekKey) {
+        const fallbackRows = await getLigueLeaderboard({
+          week_key: fallbackWeekKey,
+          id_classe: classRow.id_classe,
+          id_serie: room.id_serie,
+          limit: req.query?.limit,
+        });
+
+        if (fallbackRows.length > 0) {
+          effectiveWeekKey = fallbackWeekKey;
+          leaderboardRows = fallbackRows;
+        }
+      }
+    }
+
     return res.json({
       ok: true,
-      weekKey: desiredWeekKey || weekKey,
+      weekKey: effectiveWeekKey,
       classe: classRow.nom_classe,
       room,
       count: leaderboardRows.length,

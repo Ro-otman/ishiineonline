@@ -18,39 +18,86 @@ export async function listLigueQuizCandidatesForMatiere({
   id_classe,
   id_type,
   id_matiere,
-  limit,
+  eligible_at = null,
+  exclude_quiz_ids = [],
+  limit = null,
   seed = '',
 }) {
-  const safeLimit = Math.max(1, asInt(limit, 1));
   const safeSeed = String(seed ?? '').trim() || 'default';
+  const eligibleDate = eligible_at ? new Date(eligible_at) : null;
+  const safeEligibleAt = eligibleDate && !Number.isNaN(eligibleDate.getTime())
+    ? eligibleDate.toISOString().slice(0, 19).replace('T', ' ')
+    : null;
+  const excludedQuizIds = Array.isArray(exclude_quiz_ids)
+    ? exclude_quiz_ids.map((value) => asInt(value)).filter((value) => value > 0)
+    : [];
+  const params = [id_classe, id_matiere, id_type];
 
-  const rows = await execute(
-    `
-      SELECT
-        q.id_quiz,
-        COALESCE(NULLIF(qe.timer_seconds, 0), 30) AS timer_seconds
-      FROM programme p
-      JOIN sa s ON s.id_programme = p.id_programme
-      JOIN quiz q ON q.id_sa = s.id_sa
-      JOIN \`options\` o ON o.id_quiz = q.id_quiz
-      LEFT JOIN quiz_explanations qe ON qe.id_quiz = q.id_quiz
-      WHERE p.id_classe = ?
-        AND p.id_matiere = ?
-        AND (p.id_type IS NULL OR p.id_type = ?)
-      GROUP BY q.id_quiz, qe.timer_seconds
-      HAVING SUM(o.is_correct) >= 1
-      ORDER BY SHA2(CONCAT(?, ':', q.id_quiz), 256) ASC, q.id_quiz ASC
-      LIMIT ?
-    `,
-    [id_classe, id_matiere, id_type, safeSeed, safeLimit],
-  );
+  let sql = `
+    SELECT
+      q.id_quiz,
+      s.id_sa,
+      COALESCE(NULLIF(qe.timer_seconds, 0), 30) AS timer_seconds
+    FROM programme p
+    JOIN sa s ON s.id_programme = p.id_programme
+    JOIN quiz q ON q.id_sa = s.id_sa
+    JOIN \`options\` o ON o.id_quiz = q.id_quiz
+    LEFT JOIN quiz_explanations qe ON qe.id_quiz = q.id_quiz
+    LEFT JOIN sa_release_schedule srs ON srs.id_sa = s.id_sa
+    WHERE p.id_classe = ?
+      AND p.id_matiere = ?
+      AND (p.id_type IS NULL OR p.id_type = ?)
+  `;
+
+  if (safeEligibleAt) {
+    sql += `
+      AND (
+        srs.id_sa IS NULL
+        OR (
+          srs.is_active = 1
+          AND (srs.available_from_at IS NULL OR srs.available_from_at <= ?)
+          AND (srs.available_until_at IS NULL OR srs.available_until_at >= ?)
+        )
+      )
+    `;
+    params.push(safeEligibleAt, safeEligibleAt);
+  } else {
+    sql += `
+      AND (
+        srs.id_sa IS NULL
+        OR srs.is_active = 1
+      )
+    `;
+  }
+
+  if (excludedQuizIds.length > 0) {
+    sql += ` AND q.id_quiz NOT IN (${inPlaceholders(excludedQuizIds)})`;
+    params.push(...excludedQuizIds);
+  }
+
+  sql += `
+    GROUP BY q.id_quiz, s.id_sa, qe.timer_seconds
+    HAVING COUNT(DISTINCT o.id_options) >= 4
+       AND SUM(CASE WHEN o.is_correct = 1 THEN 1 ELSE 0 END) >= 1
+    ORDER BY SHA2(CONCAT(?, ':', q.id_quiz), 256) ASC, q.id_quiz ASC
+  `;
+  params.push(safeSeed);
+
+  if (limit != null) {
+    const safeLimit = Math.max(1, asInt(limit, 1));
+    sql += ' LIMIT ?';
+    params.push(safeLimit);
+  }
+
+  const rows = await execute(sql, params);
 
   return rows
     .map((row) => ({
       id_quiz: asInt(row.id_quiz),
+      id_sa: asInt(row.id_sa),
       timer_seconds: normalizeTimerSeconds(row.timer_seconds),
     }))
-    .filter((row) => row.id_quiz > 0);
+    .filter((row) => row.id_quiz > 0 && row.id_sa > 0);
 }
 
 export async function getQuizzesByIds(quizIds) {

@@ -88,6 +88,7 @@ async function buildPlanForCycle({
     room,
     subjects,
     questions_per_subject: questionsPerSubject,
+    eligible_at: cycleStart,
   });
 
   const timedSubjects = buildTimedSubjects({

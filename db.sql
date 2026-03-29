@@ -34,6 +34,7 @@ DROP TABLE IF EXISTS attempts;
 DROP TABLE IF EXISTS quiz_explanations;
 DROP TABLE IF EXISTS `options`;
 DROP TABLE IF EXISTS quiz;
+DROP TABLE IF EXISTS sa_release_schedule;
 DROP TABLE IF EXISTS sa;
 DROP TABLE IF EXISTS programme;
 DROP TABLE IF EXISTS matieres;
@@ -141,6 +142,22 @@ CREATE TABLE sa (
   id_programme INT NOT NULL,
   CONSTRAINT fk_sa_programme FOREIGN KEY (id_programme)
     REFERENCES programme(id_programme)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE sa_release_schedule (
+  id_release INT AUTO_INCREMENT PRIMARY KEY,
+  id_sa INT NOT NULL,
+  available_from_at DATETIME NULL,
+  available_until_at DATETIME NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_sa_release_schedule_sa (id_sa),
+  KEY idx_sa_release_schedule_window (available_from_at, available_until_at, is_active),
+  CONSTRAINT fk_sa_release_schedule_sa FOREIGN KEY (id_sa)
+    REFERENCES sa(id_sa)
     ON DELETE CASCADE
     ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -418,9 +435,12 @@ INSERT INTO niveaux (nom_niveau) VALUES ('premier_cycle'), ('second_cycle');
 INSERT INTO type_series (nom_type) VALUES
   ('scientifique'),
   ('littéraire'),
-  ('economique');
+  ('economique'),
+  ('commun');
 
 INSERT INTO series (nom_serie, id_type)
+SELECT '3ème', id_type FROM type_series WHERE nom_type = 'commun'
+UNION ALL
 SELECT 'C', id_type FROM type_series WHERE nom_type = 'scientifique'
 UNION ALL
 SELECT 'D', id_type FROM type_series WHERE nom_type = 'scientifique'
@@ -555,6 +575,7 @@ CREATE TABLE ligue_weekly_quiz_bank (
   id_classe INT NOT NULL,
   id_serie INT NOT NULL,
   id_matiere INT NOT NULL,
+  id_sa INT NOT NULL,
   question_index INT NOT NULL,
   id_quiz INT NOT NULL,
   timer_seconds INT NOT NULL DEFAULT 30,
@@ -563,6 +584,7 @@ CREATE TABLE ligue_weekly_quiz_bank (
   PRIMARY KEY (week_key, id_classe, id_serie, id_matiere, question_index),
   UNIQUE KEY uq_ligue_weekly_quiz_bank_quiz (week_key, id_classe, id_serie, id_matiere, id_quiz),
   KEY idx_ligue_weekly_quiz_bank_lookup (week_key, id_classe, id_serie, id_matiere),
+  KEY idx_ligue_weekly_quiz_bank_sa (id_sa),
 
   CONSTRAINT fk_ligue_weekly_quiz_bank_classe FOREIGN KEY (id_classe)
     REFERENCES classes(id_classe)
@@ -575,6 +597,10 @@ CREATE TABLE ligue_weekly_quiz_bank (
   CONSTRAINT fk_ligue_weekly_quiz_bank_matiere FOREIGN KEY (id_matiere)
     REFERENCES matieres(id_matiere)
     ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_weekly_quiz_bank_sa FOREIGN KEY (id_sa)
+    REFERENCES sa(id_sa)
+    ON DELETE RESTRICT
     ON UPDATE CASCADE,
   CONSTRAINT fk_ligue_weekly_quiz_bank_quiz FOREIGN KEY (id_quiz)
     REFERENCES quiz(id_quiz)

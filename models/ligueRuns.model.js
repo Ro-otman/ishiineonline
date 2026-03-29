@@ -258,3 +258,29 @@ export async function getLigueLeaderboard({
     ...row,
   }));
 }
+
+export async function findLatestNonEmptyLeaderboardWeekKey({
+  id_classe,
+  id_serie,
+  beforeOrEqualWeekKey,
+}) {
+  const safeWeekKey = String(beforeOrEqualWeekKey ?? '').trim();
+  if (!safeWeekKey) return null;
+
+  const rows = await execute(
+    `
+      SELECT MAX(lr.week_key) AS week_key
+      FROM ligue_runs lr
+      WHERE lr.id_classe = ?
+        AND lr.id_serie = ?
+        AND lr.submitted_at IS NOT NULL
+        AND lr.week_key <= ?
+    `,
+    [id_classe, id_serie, safeWeekKey],
+  );
+
+  const weekKey = rows[0]?.week_key;
+  return typeof weekKey === 'string' && weekKey.trim().length > 0
+    ? weekKey.trim()
+    : null;
+}

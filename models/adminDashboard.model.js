@@ -1,6 +1,7 @@
 ﻿import { env } from '../config/env.js';
 import { execute, getPool } from '../config/db.js';
 import { getPaymentsDashboardData } from './payments.model.js';
+import { ensureSaReleaseScheduleForSa } from './saReleaseSchedule.model.js';
 
 function asInt(value, fallback = 0) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -422,6 +423,11 @@ export async function createQuizFromDashboard(input) {
       const [saResult] = await connection.execute('INSERT INTO sa (nom_sa, id_programme) VALUES (?, ?)', [saName, idProgramme]);
       idSa = Number(saResult.insertId);
     }
+
+    await ensureSaReleaseScheduleForSa(connection, {
+      id_sa: idSa,
+      id_programme: idProgramme,
+    });
 
     const [quizResult] = await connection.execute('INSERT INTO quiz (question, id_sa) VALUES (?, ?)', [question, idSa]);
     const idQuiz = Number(quizResult.insertId);
