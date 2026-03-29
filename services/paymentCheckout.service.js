@@ -1,4 +1,8 @@
 import { env } from '../config/env.js';
+import {
+  getPaymentByTransactionId,
+  upsertPaymentRecord,
+} from '../models/payments.model.js';
 import { activateUserSubscription, getUserById } from '../models/users.model.js';
 
 const DEFAULT_API_BASE_URL = 'https://api.fedapay.com/v1';
@@ -7,6 +11,10 @@ const DEFAULT_PLAN = 'premium_monthly';
 function asString(value) {
   if (value === undefined || value === null) return '';
   return String(value).trim();
+}
+
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
 function toInt(value, fallback = 0) {
@@ -22,6 +30,10 @@ function toUrl(value) {
   } catch {
     return null;
   }
+}
+
+function normalizeStatus(value) {
+  return asString(value).toLowerCase();
 }
 
 function buildError(message, statusCode = 400, code = 'BAD_REQUEST', details) {
@@ -142,7 +154,7 @@ async function fedapayRequest(path, { method = 'GET', body } = {}) {
     }
     return data ?? {};
   } catch (error) {
-    if (error?.name == 'AbortError') {
+    if (error?.name === 'AbortError') {
       throw buildError('FedaPay met trop de temps a repondre.', 504, 'FEDAPAY_TIMEOUT');
     }
     if (error?.code) {
@@ -178,38 +190,158 @@ function extractTransactionEnvelope(payload) {
   );
 }
 
+function pickFirstText(candidates = []) {
+  for (const candidate of candidates) {
+    const text = asString(candidate);
+    if (text) return text;
+  }
+  return '';
+}
+
+function pickFirstObject(candidates = []) {
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+  return {};
+}
+
+function extractMetadata(payload) {
+  const tx = extractTransactionEnvelope(payload) || {};
+  return pickFirstObject([payload?.metadata, tx?.metadata]);
+}
+
 function extractPaymentUrl(payload) {
   const tx = extractTransactionEnvelope(payload) || {};
-  return (
-    asString(payload.payment_url) ||
-    asString(payload.paymentUrl) ||
-    asString(payload.checkout_url) ||
-    asString(payload.checkoutUrl) ||
-    asString(tx.payment_url) ||
-    asString(tx.paymentUrl) ||
-    asString(tx.url) ||
-    ''
-  );
+  return pickFirstText([
+    payload?.payment_url,
+    payload?.paymentUrl,
+    payload?.checkout_url,
+    payload?.checkoutUrl,
+    tx?.payment_url,
+    tx?.paymentUrl,
+    tx?.url,
+  ]);
 }
 
 function extractTransactionId(payload) {
   const tx = extractTransactionEnvelope(payload) || {};
-  return (
-    asString(payload.transaction_id) ||
-    asString(payload.transactionId) ||
-    asString(tx.id) ||
-    asString(tx.transaction_id) ||
-    ''
-  );
+  return pickFirstText([
+    payload?.transaction_id,
+    payload?.transactionId,
+    tx?.id,
+    tx?.transaction_id,
+  ]);
 }
 
 function extractStatus(payload) {
   const tx = extractTransactionEnvelope(payload) || {};
-  return (
-    asString(payload.status) ||
-    asString(tx.status) ||
-    ''
-  ).toLowerCase();
+  return normalizeStatus(
+    pickFirstText([
+      payload?.status,
+      tx?.status,
+    ]),
+  );
+}
+
+function extractUserId(payload, fallback = '') {
+  const tx = extractTransactionEnvelope(payload) || {};
+  const metadata = extractMetadata(payload);
+  return pickFirstText([
+    metadata?.user_id,
+    metadata?.userId,
+    payload?.userId,
+    tx?.userId,
+    fallback,
+  ]);
+}
+
+function extractPlanKey(payload, fallback = '') {
+  const tx = extractTransactionEnvelope(payload) || {};
+  const metadata = extractMetadata(payload);
+  return pickFirstText([
+    metadata?.plan,
+    payload?.plan,
+    tx?.plan,
+    fallback,
+  ]);
+}
+
+function extractAmount(payload, fallback = 0) {
+  const tx = extractTransactionEnvelope(payload) || {};
+  const candidates = [
+    tx?.amount,
+    payload?.amount,
+    fallback,
+  ];
+  for (const candidate of candidates) {
+    const parsed = toInt(candidate, Number.NaN);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return Math.max(0, toInt(fallback, 0));
+}
+
+function extractCurrencyIso(payload, fallback = 'XOF') {
+  const tx = extractTransactionEnvelope(payload) || {};
+  return pickFirstText([
+    tx?.currency?.iso,
+    payload?.currency?.iso,
+    tx?.currency_iso,
+    payload?.currency_iso,
+    fallback,
+  ]) || 'XOF';
+}
+
+function extractDescription(payload, fallback = '') {
+  const tx = extractTransactionEnvelope(payload) || {};
+  return pickFirstText([
+    tx?.description,
+    payload?.description,
+    fallback,
+  ]);
+}
+
+function extractCustomerSnapshot(payload, fallback = {}) {
+  const tx = extractTransactionEnvelope(payload) || {};
+  const source = pickFirstObject([payload?.customer, tx?.customer]);
+  const fallbackPhone = fallback.phone_number || fallback.phoneNumber || {};
+  const phoneBlock = source.phone_number || source.phoneNumber || {};
+
+  return {
+    firstname: pickFirstText([
+      source.firstname,
+      source.first_name,
+      fallback.firstname,
+      fallback.firstName,
+    ]),
+    lastname: pickFirstText([
+      source.lastname,
+      source.last_name,
+      fallback.lastname,
+      fallback.lastName,
+    ]),
+    email: pickFirstText([
+      source.email,
+      fallback.email,
+    ]),
+    phone: pickFirstText([
+      phoneBlock.number,
+      source.phone,
+      fallbackPhone.number,
+      fallback.phone,
+    ]),
+  };
+}
+
+function extractProviderDate(payload, ...keys) {
+  const tx = extractTransactionEnvelope(payload) || {};
+  return pickFirstText([
+    ...keys.flatMap((key) => [
+      payload?.[key],
+      tx?.[key],
+    ]),
+  ]);
 }
 
 function collectQueryValue(query, key) {
@@ -261,7 +393,11 @@ function extractStatusFromCallback({ callbackUrl, query }) {
     );
   }
 
-  return (candidates.find(Boolean) || '').toLowerCase();
+  return normalizeStatus(candidates.find(Boolean) || '');
+}
+
+function isSuccessfulStatus(status) {
+  return ['approved', 'transferred'].includes(normalizeStatus(status));
 }
 
 async function markSubscriptionApproved(userId, durationDays) {
@@ -271,6 +407,63 @@ async function markSubscriptionApproved(userId, durationDays) {
   }
   const updatedUser = await activateUserSubscription({ userId, durationDays });
   return { updated: true, user: updatedUser };
+}
+
+async function persistTransactionSnapshot({
+  payload,
+  transactionId,
+  userId,
+  planKey,
+  customer,
+  amount,
+  currencyIso,
+  paymentUrl,
+  callbackUrl,
+  description,
+  lastEventSource,
+}) {
+  const normalizedPayload = asObject(payload);
+  const effectiveTransactionId =
+    asString(transactionId) || extractTransactionId(normalizedPayload);
+  if (!effectiveTransactionId) return null;
+
+  const existing = await getPaymentByTransactionId(effectiveTransactionId);
+  const customerSnapshot = extractCustomerSnapshot(normalizedPayload, customer);
+
+  return upsertPaymentRecord({
+    provider: 'fedapay',
+    transactionId: effectiveTransactionId,
+    userId: extractUserId(normalizedPayload, userId || existing?.user_id),
+    planKey: extractPlanKey(normalizedPayload, planKey || existing?.plan_key || DEFAULT_PLAN),
+    status: extractStatus(normalizedPayload) || existing?.status || 'created',
+    amount: extractAmount(normalizedPayload, amount || existing?.amount || 0),
+    currencyIso: extractCurrencyIso(normalizedPayload, currencyIso || existing?.currency_iso || 'XOF'),
+    description: extractDescription(normalizedPayload, description || existing?.description || ''),
+    customerFirstname: customerSnapshot.firstname || existing?.customer_firstname,
+    customerLastname: customerSnapshot.lastname || existing?.customer_lastname,
+    customerEmail: customerSnapshot.email || existing?.customer_email,
+    customerPhone: customerSnapshot.phone || existing?.customer_phone,
+    paymentUrl:
+      extractPaymentUrl(normalizedPayload) ||
+      asString(paymentUrl) ||
+      existing?.payment_url ||
+      null,
+    callbackUrl: asString(callbackUrl) || existing?.callback_url || null,
+    approvedAt:
+      extractProviderDate(normalizedPayload, 'approved_at', 'approvedAt') ||
+      existing?.approved_at,
+    transferredAt:
+      extractProviderDate(normalizedPayload, 'transferred_at', 'transferredAt') ||
+      existing?.transferred_at,
+    providerCreatedAt:
+      extractProviderDate(normalizedPayload, 'created_at', 'createdAt') ||
+      existing?.provider_created_at,
+    providerUpdatedAt:
+      extractProviderDate(normalizedPayload, 'updated_at', 'updatedAt') ||
+      existing?.provider_updated_at,
+    lastEventSource: lastEventSource || existing?.last_event_source || 'unknown',
+    rawPayload: normalizedPayload,
+  });
 }
 
 export async function createPaymentCheckout({ req, userId, plan, customer }) {
@@ -314,6 +507,22 @@ export async function createPaymentCheckout({ req, userId, plan, customer }) {
     );
   }
 
+  if (transactionId) {
+    await persistTransactionSnapshot({
+      payload: response,
+      transactionId,
+      userId: safeUserId,
+      planKey: planConfig.key,
+      customer: safeCustomer,
+      amount: planConfig.amount,
+      currencyIso: planConfig.currencyIso,
+      paymentUrl,
+      callbackUrl,
+      description: planConfig.description,
+      lastEventSource: 'init',
+    });
+  }
+
   return {
     paymentUrl,
     transactionId: transactionId || null,
@@ -353,14 +562,29 @@ export async function verifyPaymentCheckout({
     };
   }
 
+  const existing = await getPaymentByTransactionId(effectiveTransactionId);
   const response = await fedapayRequest(`/transactions/${encodeURIComponent(effectiveTransactionId)}`);
-  const status = extractStatus(response);
-  const approved = status === 'approved';
+  const payment = await persistTransactionSnapshot({
+    payload: response,
+    transactionId: effectiveTransactionId,
+    userId: safeUserId || existing?.user_id,
+    planKey: existing?.plan_key || DEFAULT_PLAN,
+    amount: existing?.amount || resolvePlanConfig(DEFAULT_PLAN).amount,
+    currencyIso: existing?.currency_iso || env.PAYMENT_CURRENCY_ISO || 'XOF',
+    paymentUrl: existing?.payment_url,
+    callbackUrl: callbackUrl || existing?.callback_url,
+    description: existing?.description || resolvePlanConfig(DEFAULT_PLAN).description,
+    lastEventSource: 'verify',
+  });
+
+  const status = normalizeStatus(payment?.status || extractStatus(response) || callbackStatus);
+  const approved = isSuccessfulStatus(status);
+  const effectiveUserId = asString(payment?.user_id || safeUserId || existing?.user_id);
   let subscriptionUpdated = false;
 
-  if (approved) {
-    const planConfig = resolvePlanConfig(DEFAULT_PLAN);
-    const activation = await markSubscriptionApproved(safeUserId, planConfig.durationDays);
+  if (approved && effectiveUserId) {
+    const planConfig = resolvePlanConfig(payment?.plan_key || DEFAULT_PLAN);
+    const activation = await markSubscriptionApproved(effectiveUserId, planConfig.durationDays);
     subscriptionUpdated = activation.updated;
   }
 
@@ -379,25 +603,50 @@ export async function verifyPaymentCheckout({
 
 export async function handlePaymentWebhook(body = {}) {
   const transactionId = extractTransactionId(body);
-  const status = extractStatus(body);
-  const tx = extractTransactionEnvelope(body) || {};
-  const userId = asString(
-    body?.metadata?.user_id ||
-      tx?.metadata?.user_id ||
-      body?.userId ||
-      tx?.userId,
-  );
-
-  if (!transactionId || status !== 'approved' || !userId) {
+  const initialStatus = extractStatus(body);
+  if (!transactionId) {
     return {
       accepted: false,
-      transactionId: transactionId || null,
-      status: status || null,
+      transactionId: null,
+      status: initialStatus || null,
+      subscriptionUpdated: false,
     };
   }
 
-  const planConfig = resolvePlanConfig(DEFAULT_PLAN);
-  const activation = await markSubscriptionApproved(userId, planConfig.durationDays);
+  const existing = await getPaymentByTransactionId(transactionId);
+  let payload = asObject(body);
+  try {
+    payload = await fedapayRequest(`/transactions/${encodeURIComponent(transactionId)}`);
+  } catch {
+    payload = asObject(body);
+  }
+
+  const payment = await persistTransactionSnapshot({
+    payload,
+    transactionId,
+    userId: extractUserId(payload, existing?.user_id || extractUserId(body)),
+    planKey: existing?.plan_key || extractPlanKey(payload, DEFAULT_PLAN),
+    amount: existing?.amount || extractAmount(payload, env.PAYMENT_PREMIUM_AMOUNT),
+    currencyIso: existing?.currency_iso || extractCurrencyIso(payload, env.PAYMENT_CURRENCY_ISO || 'XOF'),
+    paymentUrl: existing?.payment_url || extractPaymentUrl(payload),
+    callbackUrl: existing?.callback_url,
+    description: existing?.description || extractDescription(payload, env.PAYMENT_PREMIUM_DESCRIPTION),
+    lastEventSource: 'webhook',
+  });
+
+  const status = normalizeStatus(payment?.status || extractStatus(payload) || initialStatus);
+  const effectiveUserId = asString(payment?.user_id || existing?.user_id);
+  if (!isSuccessfulStatus(status) || !effectiveUserId) {
+    return {
+      accepted: false,
+      transactionId,
+      status: status || null,
+      subscriptionUpdated: false,
+    };
+  }
+
+  const planConfig = resolvePlanConfig(payment?.plan_key || DEFAULT_PLAN);
+  const activation = await markSubscriptionApproved(effectiveUserId, planConfig.durationDays);
   return {
     accepted: true,
     transactionId,

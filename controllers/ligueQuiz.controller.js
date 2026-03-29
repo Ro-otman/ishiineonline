@@ -1,11 +1,6 @@
-import crypto from 'node:crypto';
+﻿import crypto from 'node:crypto';
 
-import { getClasseByName } from '../models/classes.model.js';
-import { getLatestLigueSettings } from '../models/ligueSettings.model.js';
-import { listMatieresForClasseAndType } from '../models/matieres.model.js';
-import { getSerieByIdOrName } from '../models/series.model.js';
 import { getUserById } from '../models/users.model.js';
-
 import {
   createLigueRun,
   finalizeLigueRun,
@@ -16,17 +11,14 @@ import {
   insertLigueRunQuestions,
   listLigueRunQuestions,
 } from '../models/ligueRuns.model.js';
-
 import {
   getLigueQuizPayloadByIds,
   listCorrectOptionIdsByQuizIds,
-  listLigueQuizIdsForMatiere,
 } from '../models/quiz.model.js';
-
 import { getLigueProfileByUserId } from '../models/ligueProfiles.model.js';
-import { buildSchedule, computeQuestionWindow } from '../services/ligueSchedule.service.js';
+import { resolveLigueRoomContext } from '../services/ligueRoomContext.service.js';
+import { computeQuestionWindow } from '../services/ligueSchedule.service.js';
 import { getSubscriptionStatus } from '../services/subscription.service.js';
-import { weekKeyFromDateUtc } from '../services/weekKey.service.js';
 
 function asString(value) {
   if (value === undefined || value === null) return '';
@@ -68,67 +60,24 @@ function httpError(statusCode, code, message, details) {
   return err;
 }
 
+function averageSecondsPerQuestion(runQuestions) {
+  const list = Array.isArray(runQuestions) ? runQuestions : [];
+  if (list.length === 0) return 30;
+  const totalSeconds = list.reduce(
+    (sum, item) => sum + Math.max(1, Number(item?.timer_seconds) || 0),
+    0,
+  );
+  return Math.max(1, Math.round(totalSeconds / list.length));
+}
+
+function questionTimersFromRun(runQuestions) {
+  return (Array.isArray(runQuestions) ? runQuestions : [])
+    .sort((a, b) => Number(a.question_index) - Number(b.question_index))
+    .map((item) => Math.max(1, Number(item.timer_seconds) || 30));
+}
+
 async function resolveContext({ roomId, classe }) {
-  const room = await getSerieByIdOrName(roomId);
-  if (!room) throw httpError(404, 'NOT_FOUND', 'Salle introuvable');
-
-  const classRow = await getClasseByName(classe);
-  if (!classRow) throw httpError(404, 'NOT_FOUND', 'Classe introuvable');
-
-  const settings = await getLatestLigueSettings({
-    id_classe: classRow.id_classe,
-    id_type: room.id_type,
-  });
-
-  if (!settings) {
-    throw httpError(
-      409,
-      'LIGUE_NOT_CONFIGURED',
-      "La ligue n'est pas encore configuree par l'administrateur pour cette classe/serie.",
-    );
-  }
-
-  const configuredStartBase =
-    settings.starts_at instanceof Date ? settings.starts_at : new Date(settings.starts_at);
-  if (Number.isNaN(configuredStartBase.getTime())) {
-    throw httpError(500, 'LIGUE_BAD_CONFIG', 'starts_at invalide dans ligue_settings');
-  }
-
-  const secondsPerQuestion = Number(settings.seconds_per_question);
-  const questionsPerSubject = Number(settings.questions_per_subject);
-  const marginSeconds = Number(settings.margin_seconds);
-  const breakSeconds = Number(settings.break_seconds);
-
-  const subjects = await listMatieresForClasseAndType({
-    id_classe: classRow.id_classe,
-    id_type: room.id_type,
-  });
-
-  const schedule = buildSchedule({
-    startBase: configuredStartBase,
-    subjects,
-    secondsPerQuestion,
-    questionsPerSubject,
-    marginSeconds,
-    breakSeconds,
-  });
-
-  const effectiveStartBase = new Date(schedule.startBase);
-  const weekKey = weekKeyFromDateUtc(effectiveStartBase) ?? weekKeyFromDateUtc(new Date());
-
-  return {
-    room,
-    classRow,
-    settings,
-    configuredStartBase,
-    startBase: effectiveStartBase,
-    schedule,
-    weekKey,
-    secondsPerQuestion,
-    questionsPerSubject,
-    marginSeconds,
-    breakSeconds,
-  };
+  return resolveLigueRoomContext({ roomId, classe });
 }
 
 export async function startSubjectRun(req, res, next) {
@@ -151,18 +100,21 @@ export async function startSubjectRun(req, res, next) {
       });
     }
 
+    const context = await resolveContext({ roomId, classe });
     const {
       room,
       classRow,
       startBase,
       schedule,
       weekKey,
-      secondsPerQuestion,
       questionsPerSubject,
-    } = await resolveContext({ roomId, classe });
+      subjectPlansByMatiereId,
+      weeklyQuizBank,
+    } = context;
 
-    const slot = schedule.slots.find((s) => Number(s.id_matiere) === subjectId);
-    if (!slot) {
+    const slot = schedule.slots.find((entry) => Number(entry.id_matiere) === subjectId);
+    const subjectPlan = subjectPlansByMatiereId.get(subjectId) ?? null;
+    if (!slot || !subjectPlan) {
       return res.status(404).json({
         ok: false,
         error: { code: 'NOT_FOUND', message: 'Matiere introuvable pour cette classe/serie' },
@@ -171,16 +123,15 @@ export async function startSubjectRun(req, res, next) {
 
     const now = Date.now();
     const slotStartMs = Date.parse(slot.startAt);
+    const slotEndMs = Date.parse(slot.endAt);
     const questionWindow = computeQuestionWindow({
       slot,
-      secondsPerQuestion,
-      totalQuestions: questionsPerSubject,
+      questionTimers: subjectPlan.questionTimers,
       now: new Date(now),
     });
-    const slotEndMs = Date.parse(slot.endAt);
     const quizEndMs = Number.isFinite(slotEndMs)
       ? slotEndMs
-      : slotStartMs + secondsPerQuestion * questionsPerSubject * 1000;
+      : slotStartMs + Math.max(1, Number(subjectPlan.totalQuizSeconds) || 1) * 1000;
 
     if (!devBypass) {
       const user = await getUserById(userId);
@@ -314,32 +265,40 @@ export async function startSubjectRun(req, res, next) {
     let runQuestions = await listLigueRunQuestions(run.id_run);
 
     if (runQuestions.length === 0) {
-      const quizIds = await listLigueQuizIdsForMatiere({
-        id_classe: classRow.id_classe,
-        id_type: room.id_type,
-        id_matiere: subjectId,
-        limit: questionsPerSubject,
-      });
+      const weeklyQuestions = weeklyQuizBank
+        .filter((row) => Number(row.id_matiere) === subjectId)
+        .sort((a, b) => Number(a.question_index) - Number(b.question_index));
 
-      if (quizIds.length < questionsPerSubject) {
+      if (weeklyQuestions.length < questionsPerSubject) {
         return res.status(409).json({
           ok: false,
           error: {
             code: 'NOT_ENOUGH_QUIZ',
-            message: `Pas assez de quiz pour cette matiere (${quizIds.length}/${questionsPerSubject}).`,
+            message: `Pas assez de quiz pour cette matiere (${weeklyQuestions.length}/${questionsPerSubject}).`,
           },
         });
       }
 
-      await insertLigueRunQuestions(run.id_run, quizIds);
+      await insertLigueRunQuestions(run.id_run, weeklyQuestions);
       runQuestions = await listLigueRunQuestions(run.id_run);
     }
 
-    const quizIdsOrdered = runQuestions
-      .sort((a, b) => a.question_index - b.question_index)
-      .map((q) => q.id_quiz);
+    const orderedRunQuestions = [...runQuestions].sort(
+      (a, b) => Number(a.question_index) - Number(b.question_index),
+    );
+    const quizIdsOrdered = orderedRunQuestions.map((item) => Number(item.id_quiz));
+    const timersByQuizId = new Map(
+      orderedRunQuestions.map((item) => [Number(item.id_quiz), Math.max(1, Number(item.timer_seconds) || 30)]),
+    );
 
-    const questions = await getLigueQuizPayloadByIds(quizIdsOrdered);
+    const questions = (await getLigueQuizPayloadByIds(quizIdsOrdered)).map((question) => ({
+      ...question,
+      timer_seconds: timersByQuizId.get(Number(question.id_quiz)) ?? Math.max(1, Number(question.timer_seconds) || 30),
+    }));
+    const totalQuizDurationSeconds = orderedRunQuestions.reduce(
+      (sum, item) => sum + Math.max(1, Number(item.timer_seconds) || 30),
+      0,
+    );
 
     return res.json({
       ok: true,
@@ -351,9 +310,11 @@ export async function startSubjectRun(req, res, next) {
       slot,
       serverNow: new Date().toISOString(),
       quiz: {
-        secondsPerQuestion,
-        questionsPerSubject,
-        durationSeconds: secondsPerQuestion * questionsPerSubject,
+        timerSource: 'per_quiz',
+        secondsPerQuestion: averageSecondsPerQuestion(orderedRunQuestions),
+        questionsPerSubject: orderedRunQuestions.length,
+        durationSeconds: totalQuizDurationSeconds,
+        questionTimers: orderedRunQuestions.map((item) => Math.max(1, Number(item.timer_seconds) || 30)),
       },
       run: {
         id_run: run.id_run,
@@ -410,19 +371,22 @@ export async function submitRun(req, res, next) {
       throw httpError(400, 'RUN_NOT_READY', 'Aucune question associee a ce run');
     }
 
-    const questionQuizIds = runQuestions
+    const questionQuizIds = [...runQuestions]
       .sort((a, b) => a.question_index - b.question_index)
-      .map((q) => Number(q.id_quiz));
+      .map((item) => Number(item.id_quiz));
 
     const quizIdSet = new Set(questionQuizIds);
 
     const answersByQuizId = new Map();
-    for (const a of answers) {
-      const quizId = asInt(a?.quizId ?? a?.id_quiz);
+    for (const answer of answers) {
+      const quizId = asInt(answer?.quizId ?? answer?.id_quiz);
       if (!quizId || !quizIdSet.has(quizId)) continue;
 
-      const optionId = asInt(a?.optionId ?? a?.id_options);
-      const responseTimeMs = clampInt(a?.responseTimeMs ?? a?.response_time_ms, { min: 0, max: 60 * 60 * 1000 });
+      const optionId = asInt(answer?.optionId ?? answer?.id_options);
+      const responseTimeMs = clampInt(answer?.responseTimeMs ?? answer?.response_time_ms, {
+        min: 0,
+        max: 60 * 60 * 1000,
+      });
 
       answersByQuizId.set(quizId, {
         id_quiz: quizId,
@@ -435,24 +399,29 @@ export async function submitRun(req, res, next) {
 
     let correctCount = 0;
     let totalResponseTimeMs = 0;
-
     const rowsToInsert = [];
 
     for (const quizId of questionQuizIds) {
-      const a = answersByQuizId.get(quizId) ?? { id_quiz: quizId, id_options: null, response_time_ms: null };
+      const answer = answersByQuizId.get(quizId) ?? {
+        id_quiz: quizId,
+        id_options: null,
+        response_time_ms: null,
+      };
       const correctOptionId = correctOptionByQuizId.get(quizId) ?? null;
 
       const isCorrect =
-        a.id_options && correctOptionId && Number(a.id_options) === Number(correctOptionId) ? 1 : 0;
+        answer.id_options && correctOptionId && Number(answer.id_options) === Number(correctOptionId) ? 1 : 0;
 
       if (isCorrect) correctCount += 1;
-      if (Number.isFinite(a.response_time_ms)) totalResponseTimeMs += a.response_time_ms;
+      if (Number.isFinite(answer.response_time_ms)) {
+        totalResponseTimeMs += answer.response_time_ms;
+      }
 
       rowsToInsert.push({
         id_quiz: quizId,
-        id_options: a.id_options,
+        id_options: answer.id_options,
         is_correct: isCorrect,
-        response_time_ms: a.response_time_ms,
+        response_time_ms: answer.response_time_ms,
       });
     }
 
@@ -497,16 +466,12 @@ export async function leaderboard(req, res, next) {
     }
 
     const desiredWeekKey = asString(req.query?.weekKey).trim();
-
-    const { room, classRow, weekKey, schedule, questionsPerSubject, secondsPerQuestion } = await resolveContext({ roomId, classe });
+    const { room, classRow, weekKey } = await resolveContext({ roomId, classe });
 
     const leaderboardRows = await getLigueLeaderboard({
       week_key: desiredWeekKey || weekKey,
       id_classe: classRow.id_classe,
       id_serie: room.id_serie,
-      expected_subjects: Array.isArray(schedule?.slots) ? schedule.slots.length : 0,
-      questions_per_subject: questionsPerSubject,
-      seconds_per_question: secondsPerQuestion,
       limit: req.query?.limit,
     });
 

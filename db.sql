@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS ligue_challenges;
 DROP TABLE IF EXISTS ligue_run_answers;
 DROP TABLE IF EXISTS ligue_run_questions;
 DROP TABLE IF EXISTS ligue_runs;
+DROP TABLE IF EXISTS ligue_weekly_quiz_bank;
 DROP TABLE IF EXISTS ligue_profiles;
 
 DROP TABLE IF EXISTS weekly_qualifications;
@@ -171,6 +172,7 @@ CREATE TABLE quiz_explanations (
   tip TEXT,
   distractor_note TEXT,
   difficulty VARCHAR(64),
+  timer_seconds INT NULL,
   CONSTRAINT fk_quiz_explanations_quiz FOREIGN KEY (id_quiz)
     REFERENCES quiz(id_quiz)
     ON DELETE CASCADE
@@ -532,10 +534,9 @@ CREATE TABLE ligue_settings (
   id_classe INT NOT NULL,
   id_type INT NULL,
   starts_at DATETIME NOT NULL,
-  seconds_per_question INT NOT NULL,
   questions_per_subject INT NOT NULL,
   margin_seconds INT NOT NULL,
-  break_seconds INT NOT NULL,
+  break_minutes INT NOT NULL,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_ligue_settings_classe FOREIGN KEY (id_classe)
     REFERENCES classes(id_classe)
@@ -548,6 +549,38 @@ CREATE TABLE ligue_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE INDEX idx_ligue_settings_classe_type ON ligue_settings(id_classe, id_type, updated_at);
+
+CREATE TABLE ligue_weekly_quiz_bank (
+  week_key VARCHAR(32) NOT NULL,
+  id_classe INT NOT NULL,
+  id_serie INT NOT NULL,
+  id_matiere INT NOT NULL,
+  question_index INT NOT NULL,
+  id_quiz INT NOT NULL,
+  timer_seconds INT NOT NULL DEFAULT 30,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (week_key, id_classe, id_serie, id_matiere, question_index),
+  UNIQUE KEY uq_ligue_weekly_quiz_bank_quiz (week_key, id_classe, id_serie, id_matiere, id_quiz),
+  KEY idx_ligue_weekly_quiz_bank_lookup (week_key, id_classe, id_serie, id_matiere),
+
+  CONSTRAINT fk_ligue_weekly_quiz_bank_classe FOREIGN KEY (id_classe)
+    REFERENCES classes(id_classe)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_weekly_quiz_bank_serie FOREIGN KEY (id_serie)
+    REFERENCES series(id_serie)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_weekly_quiz_bank_matiere FOREIGN KEY (id_matiere)
+    REFERENCES matieres(id_matiere)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_ligue_weekly_quiz_bank_quiz FOREIGN KEY (id_quiz)
+    REFERENCES quiz(id_quiz)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 -- Ligue (inscription Flutter)
@@ -781,6 +814,7 @@ CREATE TABLE ligue_run_questions (
   id_run CHAR(36) NOT NULL,
   question_index INT NOT NULL,
   id_quiz INT NOT NULL,
+  timer_seconds INT NOT NULL DEFAULT 30,
 
   PRIMARY KEY (id_run, question_index),
   UNIQUE KEY uq_ligue_run_questions_run_quiz (id_run, id_quiz),
@@ -821,5 +855,7 @@ CREATE TABLE ligue_run_answers (
     ON DELETE SET NULL
     ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 

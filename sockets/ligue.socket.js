@@ -1,22 +1,16 @@
-import {
+﻿import {
   getPresenceIndex,
   joinPresence,
   leavePresenceBySocketId,
   listPresence,
 } from '../models/liguePresence.model.js';
-import { getClasseByName } from '../models/classes.model.js';
-import { getLatestLigueSettings } from '../models/ligueSettings.model.js';
-import { listMatieresForClasseAndType } from '../models/matieres.model.js';
-import { getSerieByIdOrName } from '../models/series.model.js';
 import {
   getLigueRunById,
   listLigueRunQuestions,
 } from '../models/ligueRuns.model.js';
 import { getLigueQuizPayloadByIds } from '../models/quiz.model.js';
-import {
-  buildSchedule,
-  computeQuestionWindow,
-} from '../services/ligueSchedule.service.js';
+import { resolveLigueRoomContext } from '../services/ligueRoomContext.service.js';
+import { computeQuestionWindow } from '../services/ligueSchedule.service.js';
 
 const runtimeByRoomKey = new Map();
 const roomMembershipBySocketId = new Map();
@@ -41,111 +35,7 @@ function runChannel(runId) {
 }
 
 async function resolveRoomContext({ roomId, classe }) {
-  const room = await getSerieByIdOrName(roomId);
-  if (!room) {
-    const err = new Error('Salle introuvable');
-    err.code = 'NOT_FOUND';
-    throw err;
-  }
-
-  const classRow = await getClasseByName(classe);
-  if (!classRow) {
-    const err = new Error('Classe introuvable');
-    err.code = 'NOT_FOUND';
-    throw err;
-  }
-
-  const settings = await getLatestLigueSettings({
-    id_classe: classRow.id_classe,
-    id_type: room.id_type,
-  });
-  if (!settings) {
-    const err = new Error("La ligue n'est pas configuree pour cette classe/serie.");
-    err.code = 'LIGUE_NOT_CONFIGURED';
-    throw err;
-  }
-
-  const startBase = settings.starts_at instanceof Date ? settings.starts_at : new Date(settings.starts_at);
-  if (Number.isNaN(startBase.getTime())) {
-    const err = new Error('starts_at invalide dans ligue_settings');
-    err.code = 'LIGUE_BAD_CONFIG';
-    throw err;
-  }
-
-  const secondsPerQuestion = Number(settings.seconds_per_question);
-  const questionsPerSubject = Number(settings.questions_per_subject);
-  const marginSeconds = Number(settings.margin_seconds);
-  const breakSeconds = Number(settings.break_seconds);
-
-  const subjects = await listMatieresForClasseAndType({
-    id_classe: classRow.id_classe,
-    id_type: room.id_type,
-  });
-
-  const schedule = buildSchedule({
-    startBase,
-    subjects,
-    secondsPerQuestion,
-    questionsPerSubject,
-    marginSeconds,
-    breakSeconds,
-  });
-
-  return {
-    room,
-    classRow,
-    schedule,
-    secondsPerQuestion,
-    questionsPerSubject,
-    breakSeconds,
-  };
-}
-
-function ensureRuntime(io, roomId, classe) {
-  const key = compositeRoomKey(roomId, classe);
-  let runtime = runtimeByRoomKey.get(key);
-  if (runtime) return runtime;
-
-  runtime = {
-    key,
-    roomId: asString(roomId).trim(),
-    classe: asString(classe).trim(),
-    sockets: new Set(),
-    runSubscribers: new Map(),
-    ticking: false,
-    timer: null,
-  };
-
-  runtime.timer = setInterval(() => {
-    void tickRuntime(io, key);
-  }, 1000);
-
-  runtimeByRoomKey.set(key, runtime);
-  return runtime;
-}
-
-function maybeDisposeRuntime(key) {
-  const runtime = runtimeByRoomKey.get(key);
-  if (!runtime) return;
-  if (runtime.sockets.size > 0 || runtime.runSubscribers.size > 0) return;
-  if (runtime.timer) clearInterval(runtime.timer);
-  runtimeByRoomKey.delete(key);
-}
-
-function serializeParticipantsPayload(runtime) {
-  const participants = listPresence(runtime.key);
-  return {
-    roomId: runtime.roomId,
-    classe: runtime.classe,
-    count: participants.length,
-    participants,
-  };
-}
-
-function broadcastParticipants(io, key) {
-  const runtime = runtimeByRoomKey.get(key);
-  if (!runtime) return;
-  io.to(roomChannel(key)).emit('ligue:participants', serializeParticipantsPayload(runtime));
+  return resolveLigueRoomContext({ roomId, classe });
 }
 
 async function emitRoomState(io, key, targetSocketId = null) {
@@ -199,12 +89,28 @@ async function loadRunCache(runId) {
   const runQuestions = await listLigueRunQuestions(runId);
   if (runQuestions.length === 0) return null;
 
-  const quizIdsOrdered = runQuestions
-    .sort((a, b) => a.question_index - b.question_index)
-    .map((item) => Number(item.id_quiz));
+  const orderedRunQuestions = [...runQuestions].sort(
+    (a, b) => a.question_index - b.question_index,
+  );
+  const quizIdsOrdered = orderedRunQuestions.map((item) => Number(item.id_quiz));
+  const timerByQuizId = new Map(
+    orderedRunQuestions.map((item) => [
+      Number(item.id_quiz),
+      Math.max(1, Number(item.timer_seconds) || 30),
+    ]),
+  );
+
   const quizPayload = await getLigueQuizPayloadByIds(quizIdsOrdered);
   const questionById = new Map(
-    quizPayload.map((question) => [Number(question.id_quiz), question]),
+    quizPayload.map((question) => [
+      Number(question.id_quiz),
+      {
+        ...question,
+        timer_seconds:
+          timerByQuizId.get(Number(question.id_quiz)) ??
+          Math.max(1, Number(question.timer_seconds) || 30),
+      },
+    ]),
   );
   const questions = quizIdsOrdered
     .map((quizId) => questionById.get(quizId))
@@ -212,6 +118,7 @@ async function loadRunCache(runId) {
 
   const payload = {
     run,
+    runQuestions: orderedRunQuestions,
     questions,
   };
   runCacheByRunId.set(runId, payload);
@@ -254,11 +161,11 @@ async function emitRunState(io, key, runId, targetSocketId = null) {
       return;
     }
 
+    const questionTimers = cache.runQuestions.map((item) => Math.max(1, Number(item.timer_seconds) || 30));
     const now = new Date();
     const questionWindow = computeQuestionWindow({
       slot,
-      secondsPerQuestion: context.secondsPerQuestion,
-      totalQuestions,
+      questionTimers,
       now,
     });
 
@@ -279,11 +186,7 @@ async function emitRunState(io, key, runId, targetSocketId = null) {
       };
     } else {
       const slotStartMs = Date.parse(slot.startAt);
-      const configuredSlotEndMs = Date.parse(slot.endAt);
-      const baseRunEndMs = slotStartMs + context.secondsPerQuestion * totalQuestions * 1000;
-      const runEndMs = Number.isFinite(configuredSlotEndMs) && configuredSlotEndMs > baseRunEndMs
-        ? configuredSlotEndMs
-        : baseRunEndMs;
+      const runEndMs = Date.parse(slot.endAt);
       const beforeStart = Number.isFinite(slotStartMs) && now.getTime() < slotStartMs;
       payload = {
         runId,
@@ -354,6 +257,53 @@ function leaveRoomMembership(io, socket) {
   leavePresenceBySocketId(socket.id);
   broadcastParticipants(io, roomKey);
   maybeDisposeRuntime(roomKey);
+}
+
+function ensureRuntime(io, roomId, classe) {
+  const key = compositeRoomKey(roomId, classe);
+  let runtime = runtimeByRoomKey.get(key);
+  if (runtime) return runtime;
+
+  runtime = {
+    key,
+    roomId: asString(roomId).trim(),
+    classe: asString(classe).trim(),
+    sockets: new Set(),
+    runSubscribers: new Map(),
+    ticking: false,
+    timer: null,
+  };
+
+  runtime.timer = setInterval(() => {
+    void tickRuntime(io, key);
+  }, 1000);
+
+  runtimeByRoomKey.set(key, runtime);
+  return runtime;
+}
+
+function maybeDisposeRuntime(key) {
+  const runtime = runtimeByRoomKey.get(key);
+  if (!runtime) return;
+  if (runtime.sockets.size > 0 || runtime.runSubscribers.size > 0) return;
+  if (runtime.timer) clearInterval(runtime.timer);
+  runtimeByRoomKey.delete(key);
+}
+
+function serializeParticipantsPayload(runtime) {
+  const participants = listPresence(runtime.key);
+  return {
+    roomId: runtime.roomId,
+    classe: runtime.classe,
+    count: participants.length,
+    participants,
+  };
+}
+
+function broadcastParticipants(io, key) {
+  const runtime = runtimeByRoomKey.get(key);
+  if (!runtime) return;
+  io.to(roomChannel(key)).emit('ligue:participants', serializeParticipantsPayload(runtime));
 }
 
 export function registerLigueSockets(io) {

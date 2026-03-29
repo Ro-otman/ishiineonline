@@ -1,0 +1,172 @@
+﻿<%- include('partials/layout-start') %>
+
+<section class="content-grid-2 content-layout">
+  <article class="panel form-panel">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Reglages</p>
+        <h3><%= data.editingSetting ? 'Modifier un reglage de ligue' : 'Configurer la ligue' %></h3>
+      </div>
+      <span class="soft-badge"><%= helpers.number(data.settings.length) %> configuration(s)</span>
+    </div>
+
+    <% if (data.editingSetting) { %>
+      <div class="mini-row">
+        <div>
+          <strong>Edition en cours</strong>
+          <small><%= `${data.editingSetting.nom_classe} / ${data.editingSetting.nom_type}` %></small>
+        </div>
+        <a href="/admin/ligue" class="ghost-link">Nouveau reglage</a>
+      </div>
+    <% } %>
+
+    <p>
+      Le temps de chaque question est porte par le quiz lui-meme via <code>timer_seconds</code>.
+      Ici, tu regles seulement le debut des sessions, le volume par matiere, la marge et la pause.
+    </p>
+
+    <form method="post" action="/admin/ligue/settings" class="quiz-form">
+      <input type="hidden" name="edit_setting_id" value="<%= form.edit_setting_id || '' %>" />
+      <div class="form-split">
+        <label>
+          <span>Classe</span>
+          <select name="id_classe" required>
+            <option value="">Selectionner une classe</option>
+            <% data.classes.forEach((classe) => { %>
+              <option value="<%= classe.id_classe %>" <%= String(form.id_classe || '') === String(classe.id_classe) ? 'selected' : '' %>><%= classe.nom_classe %></option>
+            <% }) %>
+          </select>
+        </label>
+
+        <label>
+          <span>Type de serie</span>
+          <select name="id_type">
+            <option value="" <%= !String(form.id_type || '') ? 'selected' : '' %>>Commun</option>
+            <% data.typeSeries.forEach((type) => { %>
+              <option value="<%= type.id_type %>" <%= String(form.id_type || '') === String(type.id_type) ? 'selected' : '' %>><%= type.nom_type %></option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+
+      <div class="form-split form-split-large">
+        <label>
+          <span>Debut de session</span>
+          <input type="datetime-local" name="starts_at" value="<%= form.starts_at || '' %>" required />
+        </label>
+        <label>
+          <span>Questions par matiere</span>
+          <input type="number" name="questions_per_subject" min="1" max="200" step="1" value="<%= form.questions_per_subject || '10' %>" required />
+        </label>
+      </div>
+
+      <div class="form-split">
+        <label>
+          <span>Marge technique (secondes)</span>
+          <input type="number" name="margin_seconds" min="0" max="3600" step="5" value="<%= form.margin_seconds || '15' %>" required />
+        </label>
+        <label>
+          <span>Pause entre matieres (minutes)</span>
+          <input type="number" name="break_minutes" min="0" max="720" step="1" value="<%= form.break_minutes || '5' %>" required />
+        </label>
+      </div>
+
+      <button type="submit" class="primary-button"><%= data.editingSetting ? 'Mettre a jour les reglages' : 'Enregistrer les reglages' %></button>
+    </form>
+  </article>
+
+  <div class="panel-stack">
+    <article class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Repere</p>
+          <h3>Ce que controle ce module</h3>
+        </div>
+      </div>
+      <div class="mini-list">
+        <div class="mini-row">
+          <div>
+            <strong>Temps par question</strong>
+            <small>Vient de chaque quiz via <code>timer_seconds</code>.</small>
+          </div>
+        </div>
+        <div class="mini-row">
+          <div>
+            <strong>Volume de la matiere</strong>
+            <small><%= helpers.number(Number(form.questions_per_subject || 10)) %> question(s) seront tirees pour la session cible.</small>
+          </div>
+        </div>
+        <div class="mini-row">
+          <div>
+            <strong>Pause et marge</strong>
+            <small>La marge est technique. La pause est appliquee entre deux matieres.</small>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Derniere configuration</p>
+          <h3>Etat actuel</h3>
+        </div>
+      </div>
+      <% const latest = data.settings[0]; %>
+      <% if (!latest) { %>
+        <p class="empty-copy">Aucun reglage de ligue n a encore ete enregistre.</p>
+      <% } else { %>
+        <div class="mini-list">
+          <div class="mini-row"><div><strong><%= latest.nom_classe %> / <%= latest.nom_type %></strong><small>Mise a jour: <%= helpers.dateTime(latest.updated_at) %></small></div></div>
+          <div class="mini-row"><div><strong>Debut</strong><small><%= helpers.dateTime(latest.starts_at) %></small></div></div>
+          <div class="mini-row"><div><strong>Questions par matiere</strong><small><%= helpers.number(latest.questions_per_subject) %></small></div></div>
+          <div class="mini-row"><div><strong>Marge / Pause</strong><small><%= helpers.number(latest.margin_seconds) %> sec / <%= helpers.number(latest.break_minutes) %> min</small></div></div>
+        </div>
+      <% } %>
+    </article>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Configurations</p>
+      <h3>Reglages enregistres</h3>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Classe</th>
+          <th>Type</th>
+          <th>Debut</th>
+          <th>Questions / matiere</th>
+          <th>Marge</th>
+          <th>Pause</th>
+          <th>Mise a jour</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!data.settings.length) { %>
+          <tr><td colspan="8">Aucun reglage de ligue disponible pour le moment.</td></tr>
+        <% } %>
+        <% data.settings.forEach((setting) => { %>
+          <tr>
+            <td><strong><%= setting.nom_classe %></strong></td>
+            <td><%= setting.nom_type %></td>
+            <td><%= helpers.dateTime(setting.starts_at) %></td>
+            <td><%= helpers.number(setting.questions_per_subject) %></td>
+            <td><%= helpers.number(setting.margin_seconds) %> sec</td>
+            <td><%= helpers.number(setting.break_minutes) %> min</td>
+            <td><%= helpers.dateTime(setting.updated_at) %></td>
+            <td><a href="/admin/ligue?edit=<%= setting.id_setting %>" class="ghost-link">Modifier</a></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<%- include('partials/layout-end') %>

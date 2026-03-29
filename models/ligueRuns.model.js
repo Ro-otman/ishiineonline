@@ -1,5 +1,15 @@
 ﻿import { execute } from '../config/db.js';
 
+function asInt(value, fallback = 0) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeTimerSeconds(value, fallback = 30) {
+  const parsed = asInt(value, fallback);
+  return parsed > 0 ? parsed : fallback;
+}
+
 export async function getLigueRunById(id_run) {
   const rows = await execute('SELECT * FROM ligue_runs WHERE id_run = ? LIMIT 1', [id_run]);
   return rows[0] ?? null;
@@ -45,7 +55,7 @@ export async function createLigueRun({ id_run, week_key, id_user, id_classe, id_
 export async function listLigueRunQuestions(id_run) {
   const rows = await execute(
     `
-      SELECT question_index, id_quiz
+      SELECT question_index, id_quiz, timer_seconds
       FROM ligue_run_questions
       WHERE id_run = ?
       ORDER BY question_index ASC
@@ -53,27 +63,50 @@ export async function listLigueRunQuestions(id_run) {
     [id_run],
   );
 
-  return rows.map((r) => ({
-    question_index: Number(r.question_index),
-    id_quiz: Number(r.id_quiz)
+  return rows.map((row) => ({
+    question_index: asInt(row.question_index),
+    id_quiz: asInt(row.id_quiz),
+    timer_seconds: normalizeTimerSeconds(row.timer_seconds),
   }));
 }
 
-export async function insertLigueRunQuestions(id_run, quizIds) {
-  if (!Array.isArray(quizIds) || quizIds.length === 0) return;
+export async function insertLigueRunQuestions(id_run, questions) {
+  if (!Array.isArray(questions) || questions.length === 0) return;
+
+  const normalized = questions
+    .map((item, index) => {
+      if (typeof item === 'number') {
+        return {
+          question_index: index,
+          id_quiz: asInt(item),
+          timer_seconds: 30,
+        };
+      }
+      return {
+        question_index: asInt(item?.question_index, index),
+        id_quiz: asInt(item?.id_quiz ?? item?.quizId ?? item?.idQuiz ?? item?.id),
+        timer_seconds: normalizeTimerSeconds(item?.timer_seconds ?? item?.timerSeconds),
+      };
+    })
+    .filter((item) => item.id_quiz > 0);
+
+  if (normalized.length === 0) return;
 
   const values = [];
-  const placeholders = quizIds
-    .map((quizId, index) => {
-      values.push(id_run, index, quizId);
-      return '(?, ?, ?)';
+  const placeholders = normalized
+    .map((item) => {
+      values.push(id_run, item.question_index, item.id_quiz, item.timer_seconds);
+      return '(?, ?, ?, ?)';
     })
     .join(',');
 
   await execute(
     `
-      INSERT INTO ligue_run_questions (id_run, question_index, id_quiz)
+      INSERT INTO ligue_run_questions (id_run, question_index, id_quiz, timer_seconds)
       VALUES ${placeholders}
+      ON DUPLICATE KEY UPDATE
+        id_quiz = VALUES(id_quiz),
+        timer_seconds = VALUES(timer_seconds)
     `,
     values,
   );
@@ -84,8 +117,8 @@ export async function insertLigueRunAnswers(id_run, answers) {
 
   const values = [];
   const placeholders = answers
-    .map((a) => {
-      values.push(id_run, a.id_quiz, a.id_options, a.is_correct, a.response_time_ms);
+    .map((answer) => {
+      values.push(id_run, answer.id_quiz, answer.id_options, answer.is_correct, answer.response_time_ms);
       return '(?, ?, ?, ?, ?)';
     })
     .join(',');
@@ -128,30 +161,38 @@ export async function finalizeLigueRun({ id_run, correct_count, total_response_t
   return getLigueRunById(id_run);
 }
 
+async function getWeeklyLeaderboardBudget({ week_key, id_classe, id_serie }) {
+  const rows = await execute(
+    `
+      SELECT
+        COUNT(DISTINCT id_matiere) AS expected_subjects,
+        COUNT(*) AS expected_questions,
+        COALESCE(SUM(timer_seconds), 0) AS expected_time_seconds
+      FROM ligue_weekly_quiz_bank
+      WHERE week_key = ?
+        AND id_classe = ?
+        AND id_serie = ?
+    `,
+    [week_key, id_classe, id_serie],
+  );
+
+  const row = rows[0] ?? {};
+  return {
+    expectedSubjects: Math.max(1, asInt(row.expected_subjects, 0)),
+    expectedQuestions: Math.max(1, asInt(row.expected_questions, 0)),
+    expectedTimeMs: Math.max(1, asInt(row.expected_time_seconds, 0) * 1000),
+  };
+}
+
 export async function getLigueLeaderboard({
   week_key,
   id_classe,
   id_serie,
-  expected_subjects = 0,
-  questions_per_subject = 0,
-  seconds_per_question = 0,
-  limit = 50
+  limit = 50,
 }) {
-  const parsedLimit = Number.parseInt(String(limit ?? 50), 10);
-  const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50;
-  const expectedSubjects = Math.max(
-    1,
-    Number.parseInt(String(expected_subjects ?? 0), 10) || 0,
-  );
-  const questionsPerSubject = Math.max(
-    1,
-    Number.parseInt(String(questions_per_subject ?? 0), 10) || 0,
-  );
-  const secondsPerQuestion = Math.max(
-    1,
-    Number.parseInt(String(seconds_per_question ?? 0), 10) || 0,
-  );
-  const maxTimePerSubjectMs = questionsPerSubject * secondsPerQuestion * 1000;
+  const parsedLimit = asInt(limit, 50);
+  const safeLimit = parsedLimit > 0 ? parsedLimit : 50;
+  const budget = await getWeeklyLeaderboardBudget({ week_key, id_classe, id_serie });
 
   const rows = await execute(
     `
@@ -177,22 +218,20 @@ export async function getLigueLeaderboard({
 
   const leaderboard = rows
     .map((row) => {
-      const correctTotal = Number(row.correct_total ?? 0);
-      const questionsTotal = Number(row.questions_total ?? 0);
-      const timeTotal = Number(row.time_total ?? 0);
-      const subjectsPlayed = Number(row.subjects_played ?? 0);
+      const correctTotal = asInt(row.correct_total, 0);
+      const questionsTotal = asInt(row.questions_total, 0);
+      const timeTotal = asInt(row.time_total, 0);
+      const subjectsPlayed = asInt(row.subjects_played, 0);
       const rawPercent = questionsTotal > 0 ? (correctTotal / questionsTotal) * 100 : 0;
-      const speedBonusTotal = maxTimePerSubjectMs > 0
-        ? Math.max(0, (2 * subjectsPlayed) - ((2 * timeTotal) / maxTimePerSubjectMs))
+      const baseAccuracy = budget.expectedQuestions > 0
+        ? (20 * correctTotal) / budget.expectedQuestions
         : 0;
-      const averageOn20 = Math.max(
+      const speedBonus = Math.max(
         0,
-        Math.min(
-          20,
-          (((20 * correctTotal) / questionsPerSubject) + speedBonusTotal) /
-            expectedSubjects,
-        ),
+        (2 * (subjectsPlayed / budget.expectedSubjects)) -
+          ((2 * timeTotal) / budget.expectedTimeMs),
       );
+      const averageOn20 = Math.max(0, Math.min(20, baseAccuracy + speedBonus));
 
       return {
         id_user: row.id_user,

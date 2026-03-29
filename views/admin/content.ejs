@@ -1,0 +1,97 @@
+﻿<%- include('partials/layout-start') %>
+
+<section class="content-grid-2 content-layout">
+  <article class="panel form-panel">
+    <div class="section-head"><div><p class="eyebrow">Creation</p><h3>Ajouter un quiz</h3></div><span class="soft-badge"><%= helpers.number(data.programmes.length) %> programmes</span></div>
+
+    <form method="post" action="/admin/content/quiz" class="quiz-form">
+      <label>
+        <span>Programme</span>
+        <select name="id_programme" required>
+          <option value="">Selectionner un programme</option>
+          <% data.programmes.forEach((programme) => { %>
+            <option value="<%= programme.id_programme %>" <%= String(form.id_programme || '') === String(programme.id_programme) ? 'selected' : '' %>><%= programme.label %> (<%= programme.quiz_count %> quiz)</option>
+          <% }) %>
+        </select>
+      </label>
+
+      <label><span>Chapitre / SA</span><input type="text" name="sa_name" value="<%= form.sa_name || '' %>" placeholder="Ex: Fonctions affines" required /></label>
+
+      <div class="form-split">
+        <label>
+          <span>Difficulte</span>
+          <select name="difficulty">
+            <% ['facile', 'moyen', 'difficile'].forEach((level) => { %>
+              <option value="<%= level %>" <%= String(form.difficulty || 'moyen') === level ? 'selected' : '' %>><%= level %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span>Minuteur (secondes)</span>
+          <input type="number" name="timer_seconds" min="10" max="600" step="10" value="<%= form.timer_seconds || '' %>" placeholder="Ex: 20, 30, 40, 60, 80" required />
+        </label>
+      </div>
+
+      <label><span>Question</span><textarea name="question" rows="4" placeholder="Ecris ici la question complete" required><%= form.question || '' %></textarea></label>
+
+      <div class="options-grid">
+        <% const optionKeys = ['a', 'b', 'c', 'd']; %>
+        <% const optionLabels = ['Option A', 'Option B', 'Option C', 'Option D']; %>
+        <% optionKeys.forEach((key, index) => { %>
+          <label class="option-card">
+            <div class="option-topline">
+              <span><%= optionLabels[index] %></span>
+              <span class="radio-wrap"><input type="radio" name="correct_option" value="<%= index %>" <%= String(form.correct_option || '0') === String(index) ? 'checked' : '' %> /><small>Bonne reponse</small></span>
+            </div>
+            <input type="text" name="option_<%= key %>" value="<%= form[`option_${key}`] || '' %>" required />
+          </label>
+        <% }) %>
+      </div>
+
+      <div class="form-split form-split-large">
+        <label><span>Explication</span><textarea name="explanation" rows="4" placeholder="Pourquoi la bonne reponse est correcte ?"><%= form.explanation || '' %></textarea></label>
+        <label><span>Astuce</span><textarea name="tip" rows="4" placeholder="Petit indice a montrer a l apprenant"><%= form.tip || '' %></textarea></label>
+      </div>
+
+      <button type="submit" class="primary-button">Publier le quiz</button>
+    </form>
+  </article>
+
+  <div class="panel-stack">
+    <article class="panel">
+      <div class="section-head"><div><p class="eyebrow">Matieres</p><h3>Les plus fournies</h3></div></div>
+      <div class="mini-list">
+        <% data.subjectBreakdown.forEach((item) => { %>
+          <div class="mini-row"><div><strong><%= item.nom_matiere %></strong><small><%= helpers.number(item.sa_count) %> chapitres</small></div><span class="count-badge"><%= helpers.number(item.quiz_count) %> quiz</span></div>
+        <% }) %>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="section-head"><div><p class="eyebrow">Bibliotheque</p><h3>Programmes disponibles</h3></div></div>
+      <div class="stack-list slim-scroll">
+        <% data.programmes.slice(0, 18).forEach((programme) => { %>
+          <article class="list-card compact-card"><div><strong><%= programme.label %></strong><small><%= helpers.number(programme.sa_count) %> chapitres</small></div><div class="list-meta"><span class="count-badge"><%= helpers.number(programme.quiz_count) %> quiz</span></div></article>
+        <% }) %>
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-head"><div><p class="eyebrow">Activite recente</p><h3>Derniers quiz ajoutes</h3></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Question</th><th>Matiere</th><th>Chapitre</th></tr></thead>
+      <tbody>
+        <% if (!data.recentQuizzes.length) { %><tr><td colspan="3">Aucun quiz cree pour le moment.</td></tr><% } %>
+        <% data.recentQuizzes.forEach((quiz) => { %>
+          <tr><td><%= quiz.question %></td><td><strong><%= quiz.nom_matiere %></strong><small><%= `${quiz.nom_classe} / ${quiz.nom_type}` %></small></td><td><%= quiz.nom_sa %></td></tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<%- include('partials/layout-end') %>
+

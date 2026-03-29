@@ -1,0 +1,75 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= `${page.title} | ${appTitle}` %></title>
+    <link rel="stylesheet" href="/admin.css" />
+  </head>
+  <body class="admin-body">
+    <% const navItems = [
+      { key: 'overview', href: '/admin', label: 'Vue d ensemble', hint: 'KPIs + activite' },
+      { key: 'users', href: '/admin/users', label: 'Utilisateurs', hint: 'Comptes + abonnements' },
+      { key: 'content', href: '/admin/content', label: 'Contenu', hint: 'Programmes + quiz' },
+      { key: 'ligue', href: '/admin/ligue', label: 'Ligue', hint: 'Planning + reglages' },
+      { key: 'payments', href: '/admin/payments', label: 'Paiements', hint: 'Revenu + activations' },
+    ]; %>
+
+    <div class="admin-app">
+      <aside class="admin-sidebar">
+        <div class="brand-card">
+          <div class="brand-orb"></div>
+          <div>
+            <p class="brand-kicker">iShiine</p>
+            <h1><%= appTitle %></h1>
+            <p class="brand-copy">Le cockpit clair, pro et vivant pour piloter l application.</p>
+          </div>
+        </div>
+
+        <nav class="side-nav">
+          <% navItems.forEach((item, index) => { %>
+            <a href="<%= item.href %>" class="side-link <%= page.section === item.key ? 'side-link-active' : '' %>">
+              <span class="side-link-index">0<%= index + 1 %></span>
+              <span>
+                <strong><%= item.label %></strong>
+                <small><%= item.hint %></small>
+              </span>
+            </a>
+          <% }) %>
+        </nav>
+
+        <div class="sidebar-mini-stats">
+          <article class="mini-stat-card">
+            <span>Utilisateurs</span>
+            <strong><%= helpers.number(data.metrics.totalUsers) %></strong>
+          </article>
+          <article class="mini-stat-card accent">
+            <span>Abonnes actifs</span>
+            <strong><%= helpers.number(data.metrics.activeSubscribers) %></strong>
+          </article>
+          <article class="mini-stat-card gold">
+            <span>Quiz</span>
+            <strong><%= helpers.number(data.metrics.totalQuiz) %></strong>
+          </article>
+        </div>
+      </aside>
+
+      <main class="admin-main">
+        <header class="page-header">
+          <div>
+            <p class="page-kicker"><%= page.kicker %></p>
+            <h2><%= page.title %></h2>
+            <p class="page-intro"><%= page.intro %></p>
+          </div>
+          <div class="page-meta">
+            <span class="meta-chip">Mise a jour: <%= helpers.dateTime(data.generatedAt) %></span>
+            <span class="meta-chip meta-chip-accent">Plan premium: <%= helpers.money(data.premiumAmount) %> F CFA</span>
+          </div>
+        </header>
+
+        <% if (feedback.success) { %>
+          <div class="flash flash-success"><%= feedback.success %></div>
+        <% } %>
+        <% if (feedback.error) { %>
+          <div class="flash flash-error"><%= feedback.error %></div>
+        <% } %>

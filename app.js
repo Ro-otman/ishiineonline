@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 
 import { createServer } from "node:http";
 import fs from "node:fs/promises";
@@ -15,6 +15,7 @@ import { execute } from "./config/db.js";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { notFound } from "./middlewares/notFound.js";
+import adminRouter from "./routes/admin.routes.js";
 import routes from "./routes/index.js";
 import { registerLigueSockets } from "./sockets/ligue.socket.js";
 
@@ -33,6 +34,8 @@ async function start() {
   }
 
   app.disable("x-powered-by");
+  app.set("views", path.join(__dirname, "views"));
+  app.set("view engine", "ejs");
 
   const corsOrigins =
     env.CORS_ORIGIN === "*"
@@ -54,7 +57,7 @@ async function start() {
   app.use(express.static(path.join(__dirname, "public")));
 
   app.get("/", (_req, res) => res.redirect("/health"));
-
+  app.use("/admin", adminRouter);
   app.use("/api", routes);
   app.use("/", routes);
 

@@ -1,4 +1,4 @@
-import path from "node:path";
+﻿import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import dotenv from "dotenv";
@@ -47,5 +47,10 @@ export const env = {
   PAYMENT_PREMIUM_DESCRIPTION:
     process.env.PAYMENT_PREMIUM_DESCRIPTION || 'Abonnement mensuel',
   PAYMENT_CURRENCY_ISO: process.env.PAYMENT_CURRENCY_ISO || 'XOF',
-  PAYMENT_DURATION_DAYS: toInt(process.env.PAYMENT_DURATION_DAYS, 30)
+  PAYMENT_DURATION_DAYS: toInt(process.env.PAYMENT_DURATION_DAYS, 30),
+
+  // Admin dashboard
+  ADMIN_DASHBOARD_USER: process.env.ADMIN_DASHBOARD_USER || '',
+  ADMIN_DASHBOARD_PASSWORD: process.env.ADMIN_DASHBOARD_PASSWORD || '',
+  ADMIN_DASHBOARD_TITLE: process.env.ADMIN_DASHBOARD_TITLE || 'iShiine Admin',
 };

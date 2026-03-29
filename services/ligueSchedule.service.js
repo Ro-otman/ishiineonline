@@ -1,23 +1,40 @@
-export function computeTotalCompetitionSeconds({
-  subjectCount,
-  slotDurationSeconds,
-  breakSeconds,
-}) {
-  const safeSubjectCount = Number(subjectCount) || 0;
-  if (safeSubjectCount <= 0) return 0;
+﻿export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-  const safeSlotDuration = Math.max(0, Number(slotDurationSeconds) || 0);
-  const safeBreakSeconds = Math.max(0, Number(breakSeconds) || 0);
-
-  return safeSubjectCount * safeSlotDuration + Math.max(0, safeSubjectCount - 1) * safeBreakSeconds;
+function asDate(value) {
+  if (value instanceof Date) return value;
+  return new Date(value);
 }
 
-export function computeRecurringStart({
-  startBase,
-  totalCompetitionSeconds,
-  now = new Date(),
+function asInt(value, fallback = 0) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeQuestionTimers(questionTimers) {
+  if (!Array.isArray(questionTimers)) return [];
+  return questionTimers
+    .map((value) => Math.max(1, asInt(value, 0)))
+    .filter((value) => value > 0);
+}
+
+export function computeTotalCompetitionSeconds({
+  subjects,
+  breakSeconds,
 }) {
-  const base = startBase instanceof Date ? startBase : new Date(startBase);
+  const safeSubjects = Array.isArray(subjects) ? subjects : [];
+  const safeBreakSeconds = Math.max(0, asInt(breakSeconds, 0));
+  if (safeSubjects.length === 0) return 0;
+
+  const slotsTotal = safeSubjects.reduce(
+    (sum, subject) => sum + Math.max(1, asInt(subject?.durationSeconds, 1)),
+    0,
+  );
+
+  return slotsTotal + Math.max(0, safeSubjects.length - 1) * safeBreakSeconds;
+}
+
+export function latestWeeklyOccurrence({ startBase, now = new Date() }) {
+  const base = asDate(startBase);
   if (Number.isNaN(base.getTime())) {
     const err = new Error('startBase invalide');
     err.statusCode = 500;
@@ -25,136 +42,131 @@ export function computeRecurringStart({
     throw err;
   }
 
-  const nowDate = now instanceof Date ? now : new Date(now);
-  if (Number.isNaN(nowDate.getTime())) {
+  const current = asDate(now);
+  if (Number.isNaN(current.getTime()) || current.getTime() <= base.getTime()) {
     return new Date(base.getTime());
   }
 
-  const totalMs = Math.max(0, Number(totalCompetitionSeconds) || 0) * 1000;
-  const weekMs = 7 * 24 * 60 * 60 * 1000;
-  const baseMs = base.getTime();
-  const nowMs = nowDate.getTime();
+  const elapsedMs = current.getTime() - base.getTime();
+  const weeksElapsed = Math.floor(elapsedMs / WEEK_MS);
+  return new Date(base.getTime() + weeksElapsed * WEEK_MS);
+}
 
-  if (nowMs < baseMs) {
-    return new Date(baseMs);
-  }
-
-  const elapsedSinceBaseMs = nowMs - baseMs;
-  const weeksElapsed = Math.floor(elapsedSinceBaseMs / weekMs);
-  let cycleStartMs = baseMs + weeksElapsed * weekMs;
-
-  if (totalMs > 0 && nowMs >= cycleStartMs + totalMs) {
-    cycleStartMs += weekMs;
-  }
-
-  return new Date(cycleStartMs);
+export function nextWeeklyOccurrence(start) {
+  const base = asDate(start);
+  return new Date(base.getTime() + WEEK_MS);
 }
 
 export function computeQuestionWindow({
   slot,
-  secondsPerQuestion,
-  totalQuestions,
+  questionTimers,
   now = new Date(),
 }) {
-  if (!slot || totalQuestions <= 0 || secondsPerQuestion <= 0) {
-    return null;
-  }
+  const timers = normalizeQuestionTimers(questionTimers);
+  if (!slot || timers.length === 0) return null;
 
   const slotStartMs = Date.parse(slot.startAt);
   if (!Number.isFinite(slotStartMs)) return null;
 
-  const nowDate = now instanceof Date ? now : new Date(now);
-  if (Number.isNaN(nowDate.getTime())) return null;
-
-  const questionDurationMs = Math.max(1, Number(secondsPerQuestion)) * 1000;
-  const baseRunEndMs = slotStartMs + questionDurationMs * Math.max(1, Number(totalQuestions));
   const slotEndMs = Date.parse(slot.endAt);
-  const runEndMs = Number.isFinite(slotEndMs) && slotEndMs > baseRunEndMs ? slotEndMs : baseRunEndMs;
-  const nowMs = nowDate.getTime();
+  const totalQuizSeconds = timers.reduce((sum, value) => sum + value, 0);
+  const baseRunEndMs = slotStartMs + totalQuizSeconds * 1000;
+  const runEndMs = Number.isFinite(slotEndMs) && slotEndMs > baseRunEndMs
+    ? slotEndMs
+    : baseRunEndMs;
+
+  const current = asDate(now);
+  if (Number.isNaN(current.getTime())) return null;
+  const nowMs = current.getTime();
 
   if (nowMs < slotStartMs || nowMs >= runEndMs) {
     return null;
   }
 
-  const elapsedMs = nowMs - slotStartMs;
-  const rawIndex = Math.floor(elapsedMs / questionDurationMs);
-  const questionIndex = Math.min(
-    Math.max(0, totalQuestions - 1),
-    rawIndex,
-  );
-  const questionStartMs = slotStartMs + questionIndex * questionDurationMs;
-  const questionEndMs = questionIndex >= totalQuestions - 1
-    ? runEndMs
-    : Math.min(runEndMs, questionStartMs + questionDurationMs);
-  const remainingSeconds = Math.max(
-    0,
-    Math.ceil((questionEndMs - nowMs) / 1000),
-  );
+  let cursorMs = slotStartMs;
+  for (let index = 0; index < timers.length; index += 1) {
+    const timerSeconds = timers[index];
+    const isLast = index >= timers.length - 1;
+    const questionEndMs = isLast ? runEndMs : cursorMs + timerSeconds * 1000;
 
-  return {
-    questionIndex,
-    remainingSeconds,
-    missedQuestions: Math.max(0, Math.min(totalQuestions - 1, rawIndex)),
-    questionStartAt: new Date(questionStartMs).toISOString(),
-    questionEndAt: new Date(questionEndMs).toISOString(),
-    runEndAt: new Date(runEndMs).toISOString(),
-  };
+    if (nowMs < questionEndMs) {
+      return {
+        questionIndex: index,
+        remainingSeconds: Math.max(0, Math.ceil((questionEndMs - nowMs) / 1000)),
+        missedQuestions: index,
+        questionStartAt: new Date(cursorMs).toISOString(),
+        questionEndAt: new Date(questionEndMs).toISOString(),
+        runEndAt: new Date(runEndMs).toISOString(),
+        questionTimerSeconds: timerSeconds,
+      };
+    }
+
+    cursorMs += timerSeconds * 1000;
+  }
+
+  return null;
 }
 
 export function buildSchedule({
-  startBase,
+  cycleStart,
   subjects,
-  secondsPerQuestion,
-  questionsPerSubject,
-  marginSeconds,
   breakSeconds,
   now = new Date(),
 }) {
-  const base = startBase instanceof Date ? startBase : new Date(startBase);
+  const base = asDate(cycleStart);
   if (Number.isNaN(base.getTime())) {
-    const err = new Error('startBase invalide');
+    const err = new Error('cycleStart invalide');
     err.statusCode = 500;
     err.code = 'LIGUE_BAD_CONFIG';
     throw err;
   }
 
-  const slotDurationSeconds =
-    Math.max(1, Number(secondsPerQuestion) || 1) * Math.max(1, Number(questionsPerSubject) || 1) +
-    Math.max(0, Number(marginSeconds) || 0);
+  const safeSubjects = Array.isArray(subjects) ? subjects : [];
+  const safeBreakSeconds = Math.max(0, asInt(breakSeconds, 0));
+  let cursorMs = base.getTime();
 
-  const totalCompetitionSeconds = computeTotalCompetitionSeconds({
-    subjectCount: Array.isArray(subjects) ? subjects.length : 0,
-    slotDurationSeconds,
-    breakSeconds,
-  });
+  const slots = safeSubjects.map((subject, index) => {
+    const questionTimers = normalizeQuestionTimers(subject?.questionTimers);
+    const questionCount = Math.max(0, asInt(subject?.questionCount, questionTimers.length));
+    const totalQuizSeconds = questionTimers.reduce((sum, value) => sum + value, 0);
+    const durationSeconds = Math.max(
+      Math.max(1, totalQuizSeconds),
+      asInt(subject?.durationSeconds, totalQuizSeconds || 1),
+    );
 
-  const effectiveBase = computeRecurringStart({
-    startBase: base,
-    totalCompetitionSeconds,
-    now,
-  });
-
-  let cursorMs = effectiveBase.getTime();
-
-  const slots = (Array.isArray(subjects) ? subjects : []).map((subject, index) => {
     const startAt = new Date(cursorMs);
-    const endAt = new Date(cursorMs + slotDurationSeconds * 1000);
+    const endAt = new Date(cursorMs + durationSeconds * 1000);
 
-    cursorMs = endAt.getTime() + Math.max(0, Number(breakSeconds) || 0) * 1000;
+    cursorMs = endAt.getTime() + safeBreakSeconds * 1000;
 
     return {
       index,
       ...subject,
+      questionCount,
+      questionTimers,
+      totalQuizSeconds,
+      durationSeconds,
       startAt: startAt.toISOString(),
       endAt: endAt.toISOString(),
-      durationSeconds: slotDurationSeconds,
     };
   });
 
-  const nowDate = now instanceof Date ? now : new Date(now);
-  const nowMs = nowDate.getTime();
-  const current =
-    slots.find((slot) => nowMs >= Date.parse(slot.startAt) && nowMs < Date.parse(slot.endAt)) ?? null;
+  const totalCompetitionSeconds = computeTotalCompetitionSeconds({
+    subjects: slots,
+    breakSeconds: safeBreakSeconds,
+  });
+
+  const cycleEndAt = slots.length > 0
+    ? slots[slots.length - 1].endAt
+    : new Date(base.getTime()).toISOString();
+
+  const currentNow = asDate(now);
+  const nowMs = currentNow.getTime();
+  const current = slots.find((slot) => {
+    const startMs = Date.parse(slot.startAt);
+    const endMs = Date.parse(slot.endAt);
+    return Number.isFinite(startMs) && Number.isFinite(endMs) && nowMs >= startMs && nowMs < endMs;
+  }) ?? null;
   const next = slots.find((slot) => nowMs < Date.parse(slot.startAt)) ?? null;
 
   let status = 'waiting_next_cycle';
@@ -165,11 +177,10 @@ export function buildSchedule({
   }
 
   return {
-    configuredStartBase: base.toISOString(),
-    startBase: effectiveBase.toISOString(),
-    slotDurationSeconds,
-    breakSeconds: Math.max(0, Number(breakSeconds) || 0),
+    startBase: base.toISOString(),
+    breakSeconds: safeBreakSeconds,
     totalCompetitionSeconds,
+    cycleEndAt,
     slots,
     current,
     next,

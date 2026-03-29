@@ -1,0 +1,109 @@
+﻿<%- include('partials/layout-start') %>
+
+<section class="hero-band panel playful-hero">
+  <div>
+    <p class="eyebrow">Vue rapide</p>
+    <h3>Ton application grandit, et ton tableau de bord doit respirer.</h3>
+    <p>Ici, on se concentre sur l essentiel: utilisateurs, abonnements, contenu et rythme d apprentissage.</p>
+  </div>
+  <div class="hero-badges">
+    <span class="soft-badge">Moyenne quiz: <%= data.metrics.averageScore %>%</span>
+    <span class="soft-badge">Programmes: <%= helpers.number(data.metrics.totalProgrammes) %></span>
+  </div>
+</section>
+
+<section class="metric-grid metric-grid-4">
+  <article class="metric-card panel">
+    <span class="metric-label">Utilisateurs</span>
+    <strong class="metric-value"><%= helpers.number(data.metrics.totalUsers) %></strong>
+    <span class="metric-help">Tous les comptes enregistres</span>
+  </article>
+  <article class="metric-card panel accent-sky">
+    <span class="metric-label">Abonnes actifs</span>
+    <strong class="metric-value"><%= helpers.number(data.metrics.activeSubscribers) %></strong>
+    <span class="metric-help">Acces premium encore valides</span>
+  </article>
+  <article class="metric-card panel accent-gold">
+    <span class="metric-label">Quiz publies</span>
+    <strong class="metric-value"><%= helpers.number(data.metrics.totalQuiz) %></strong>
+    <span class="metric-help"><%= helpers.number(data.metrics.totalSa) %> chapitres couverts</span>
+  </article>
+  <article class="metric-card panel accent-coral">
+    <span class="metric-label">Tentatives</span>
+    <strong class="metric-value"><%= helpers.number(data.metrics.totalAttempts) %></strong>
+    <span class="metric-help">Engagement global des apprenants</span>
+  </article>
+</section>
+
+<section class="content-grid-2">
+  <article class="panel">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Nouveaux comptes</p>
+        <h3>Dernieres inscriptions</h3>
+      </div>
+      <a class="ghost-link" href="/admin/users">Voir tout</a>
+    </div>
+    <div class="stack-list">
+      <% if (!data.recentUsers.length) { %><p class="empty-copy">Aucun utilisateur pour le moment.</p><% } %>
+      <% data.recentUsers.forEach((user) => { %>
+        <article class="list-card">
+          <div>
+            <strong><%= `${user.prenoms} ${user.nom}` %></strong>
+            <small><%= user.email || user.phone || 'Contact non renseigne' %></small>
+          </div>
+          <div class="list-meta">
+            <span class="status-pill <%= Number(user.is_subscribed) === 1 ? 'status-pill-active' : 'status-pill-idle' %>"><%= Number(user.is_subscribed) === 1 ? 'Abonne' : 'Libre' %></span>
+            <small><%= user.classe %></small>
+          </div>
+        </article>
+      <% }) %>
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Contenu recent</p>
+        <h3>Derniers quiz crees</h3>
+      </div>
+      <a class="ghost-link" href="/admin/content">Gerer le contenu</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Question</th><th>Contexte</th></tr></thead>
+        <tbody>
+          <% if (!data.recentQuizzes.length) { %><tr><td colspan="2">Aucun quiz trouve.</td></tr><% } %>
+          <% data.recentQuizzes.forEach((quiz) => { %>
+            <tr>
+              <td><%= quiz.question %></td>
+              <td><strong><%= `${quiz.nom_classe} / ${quiz.nom_type}` %></strong><small><%= `${quiz.nom_matiere} - ${quiz.nom_sa}` %></small></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<section class="content-grid-2">
+  <article class="panel">
+    <div class="section-head"><div><p class="eyebrow">Population</p><h3>Classes les plus representees</h3></div></div>
+    <div class="mini-grid">
+      <% data.classBreakdown.forEach((item) => { %>
+        <article class="mini-tile"><strong><%= item.classe %></strong><span><%= helpers.number(item.total) %> comptes</span></article>
+      <% }) %>
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="section-head"><div><p class="eyebrow">Matieres</p><h3>Les plus riches en quiz</h3></div></div>
+    <div class="mini-grid">
+      <% data.subjectBreakdown.forEach((item) => { %>
+        <article class="mini-tile"><strong><%= item.nom_matiere %></strong><span><%= helpers.number(item.quiz_count) %> quiz</span><small><%= helpers.number(item.sa_count) %> chapitres</small></article>
+      <% }) %>
+    </div>
+  </article>
+</section>
+
+<%- include('partials/layout-end') %>

@@ -1,0 +1,269 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= pageTitle %></title>
+    <link rel="stylesheet" href="/admin.css" />
+  </head>
+  <body>
+    <% const metrics = snapshot.metrics; %>
+    <% const money = (value) => new Intl.NumberFormat('fr-FR').format(Number(value || 0)); %>
+    <% const number = (value) => new Intl.NumberFormat('fr-FR').format(Number(value || 0)); %>
+
+    <div class="admin-shell">
+      <header class="hero-panel metal-panel">
+        <div>
+          <p class="eyebrow">Centre de pilotage iShiine</p>
+          <h1>Dashboard admin</h1>
+          <p class="hero-copy">
+            Suis la sante de l'application, gere le contenu pedagogique et ajoute de nouveaux quiz sans quitter le backend.
+          </p>
+        </div>
+        <div class="hero-meta">
+          <div class="hero-chip">Genere le <%= new Date(snapshot.generatedAt).toLocaleString('fr-FR') %></div>
+          <div class="hero-chip hero-chip-accent">Plan premium: <%= money(snapshot.premiumAmount) %> F CFA</div>
+        </div>
+      </header>
+
+      <% if (feedback.success) { %>
+        <div class="flash flash-success"><%= feedback.success %></div>
+      <% } %>
+      <% if (feedback.error) { %>
+        <div class="flash flash-error"><%= feedback.error %></div>
+      <% } %>
+
+      <section class="stats-grid">
+        <article class="stat-card metal-panel">
+          <span class="stat-label">Utilisateurs</span>
+          <strong class="stat-value"><%= number(metrics.totalUsers) %></strong>
+          <span class="stat-hint">Tous les comptes enregistres</span>
+        </article>
+        <article class="stat-card metal-panel">
+          <span class="stat-label">Abonnes actifs</span>
+          <strong class="stat-value"><%= number(metrics.activeSubscribers) %></strong>
+          <span class="stat-hint">Abonnements encore valides</span>
+        </article>
+        <article class="stat-card metal-panel">
+          <span class="stat-label">Quiz</span>
+          <strong class="stat-value"><%= number(metrics.totalQuiz) %></strong>
+          <span class="stat-hint"><%= number(metrics.totalSa) %> chapitres sur <%= number(metrics.totalMatieres) %> matieres</span>
+        </article>
+        <article class="stat-card metal-panel">
+          <span class="stat-label">Tentatives</span>
+          <strong class="stat-value"><%= number(metrics.totalAttempts) %></strong>
+          <span class="stat-hint">Score moyen: <%= metrics.averageScore %>%</span>
+        </article>
+        <article class="stat-card metal-panel">
+          <span class="stat-label">CA estime</span>
+          <strong class="stat-value"><%= money(metrics.estimatedRevenue) %> F CFA</strong>
+          <span class="stat-hint"><%= number(metrics.subscribedUsers) %> abonnements enregistres</span>
+        </article>
+        <article class="stat-card metal-panel">
+          <span class="stat-label">Ce mois-ci</span>
+          <strong class="stat-value"><%= number(metrics.newSubscriptionsThisMonth) %></strong>
+          <span class="stat-hint"><%= money(metrics.estimatedActiveRevenue) %> F CFA actifs</span>
+        </article>
+      </section>
+
+      <p class="dashboard-note">
+        Le chiffre d'affaires affiche ici une estimation basee sur les abonnements enregistres et le prix premium actuel. Pour un CA exact historique, il faudra ajouter un journal de transactions payees.
+      </p>
+
+      <section class="content-grid">
+        <article class="panel form-panel metal-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Contenu</p>
+              <h2>Ajouter un quiz</h2>
+            </div>
+            <span class="section-badge"><%= number(snapshot.programmes.length) %> programmes</span>
+          </div>
+
+          <form method="post" action="/admin/quiz" class="quiz-form">
+            <label>
+              <span>Programme</span>
+              <select name="id_programme" required>
+                <option value="">Selectionner un programme</option>
+                <% for (const programme of snapshot.programmes) { %>
+                  <option value="<%= programme.id_programme %>" <%= String(form.id_programme || '') === String(programme.id_programme) ? 'selected' : '' %>>
+                    <%= programme.label %> (<%= programme.quiz_count %> quiz)
+                  </option>
+                <% } %>
+              </select>
+            </label>
+
+            <div class="form-split">
+              <label>
+                <span>Chapitre / SA</span>
+                <input type="text" name="sa_name" value="<%= form.sa_name || '' %>" placeholder="Ex: Fonctions affines" required />
+              </label>
+              <label>
+                <span>Difficulte</span>
+                <select name="difficulty">
+                  <% for (const level of ['facile', 'moyen', 'difficile']) { %>
+                    <option value="<%= level %>" <%= String(form.difficulty || 'moyen') === level ? 'selected' : '' %>><%= level %></option>
+                  <% } %>
+                </select>
+              </label>
+            </div>
+
+            <label>
+              <span>Question</span>
+              <textarea name="question" rows="4" placeholder="Ecris ici la question complete" required><%= form.question || '' %></textarea>
+            </label>
+
+            <div class="options-grid">
+              <% const optionKeys = ['a', 'b', 'c', 'd']; %>
+              <% const optionLabels = ['Option A', 'Option B', 'Option C', 'Option D']; %>
+              <% optionKeys.forEach((key, index) => { %>
+                <label class="option-card">
+                  <div class="option-topline">
+                    <span><%= optionLabels[index] %></span>
+                    <span class="radio-wrap">
+                      <input type="radio" name="correct_option" value="<%= index %>" <%= String(form.correct_option || '0') === String(index) ? 'checked' : '' %> />
+                      <small>Bonne reponse</small>
+                    </span>
+                  </div>
+                  <input type="text" name="option_<%= key %>" value="<%= form[`option_${key}`] || '' %>" required />
+                </label>
+              <% }) %>
+            </div>
+
+            <div class="form-split form-split-large">
+              <label>
+                <span>Explication</span>
+                <textarea name="explanation" rows="4" placeholder="Pourquoi la bonne reponse est correcte ?"><%= form.explanation || '' %></textarea>
+              </label>
+              <label>
+                <span>Astuce</span>
+                <textarea name="tip" rows="4" placeholder="Petit indice a montrer a l'apprenant"><%= form.tip || '' %></textarea>
+              </label>
+            </div>
+
+            <button type="submit" class="primary-button">Enregistrer le quiz</button>
+          </form>
+        </article>
+
+        <div class="panel-stack">
+          <article class="panel metal-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Utilisateurs</p>
+                <h2>Dernieres inscriptions</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nom</th>
+                    <th>Classe</th>
+                    <th>Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% if (!snapshot.recentUsers.length) { %>
+                    <tr><td colspan="3">Aucun utilisateur pour le moment.</td></tr>
+                  <% } %>
+                  <% snapshot.recentUsers.forEach((user) => { %>
+                    <tr>
+                      <td>
+                        <strong><%= `${user.prenoms} ${user.nom}` %></strong>
+                        <small><%= user.email %></small>
+                      </td>
+                      <td><%= user.classe %></td>
+                      <td>
+                        <span class="status-pill <%= Number(user.is_subscribed) === 1 ? 'status-pill-active' : 'status-pill-idle' %>">
+                          <%= Number(user.is_subscribed) === 1 ? 'Abonne' : 'Libre' %>
+                        </span>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel metal-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Contenu</p>
+                <h2>Matieres les plus chargees</h2>
+              </div>
+            </div>
+            <div class="mini-list">
+              <% if (!snapshot.subjectBreakdown.length) { %>
+                <p class="empty-copy">Aucune matiere disponible.</p>
+              <% } %>
+              <% snapshot.subjectBreakdown.forEach((item) => { %>
+                <div class="mini-row">
+                  <div>
+                    <strong><%= item.nom_matiere %></strong>
+                    <small><%= number(item.sa_count) %> chapitres</small>
+                  </div>
+                  <span class="count-badge"><%= number(item.quiz_count) %> quiz</span>
+                </div>
+              <% }) %>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="bottom-grid">
+        <article class="panel metal-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Population</p>
+              <h2>Repartition par classe</h2>
+            </div>
+          </div>
+          <div class="mini-list">
+            <% if (!snapshot.classBreakdown.length) { %>
+              <p class="empty-copy">Aucune repartition disponible.</p>
+            <% } %>
+            <% snapshot.classBreakdown.forEach((item) => { %>
+              <div class="mini-row">
+                <div>
+                  <strong><%= item.classe %></strong>
+                  <small>Comptes enregistres</small>
+                </div>
+                <span class="count-badge"><%= number(item.total) %></span>
+              </div>
+            <% }) %>
+          </div>
+        </article>
+
+        <article class="panel metal-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Activite recente</p>
+              <h2>Derniers quiz crees</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Question</th>
+                  <th>Contexte</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!snapshot.recentQuizzes.length) { %>
+                  <tr><td colspan="2">Aucun quiz trouve.</td></tr>
+                <% } %>
+                <% snapshot.recentQuizzes.forEach((quiz) => { %>
+                  <tr>
+                    <td><%= quiz.question %></td>
+                    <td><%= `${quiz.nom_classe} / ${quiz.nom_type} / ${quiz.nom_matiere}` %><br /><small><%= quiz.nom_sa %></small></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </div>
+  </body>
+</html>

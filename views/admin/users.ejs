@@ -1,0 +1,52 @@
+﻿<%- include('partials/layout-start') %>
+
+<section class="metric-grid metric-grid-3">
+  <article class="metric-card panel"><span class="metric-label">Total comptes</span><strong class="metric-value"><%= helpers.number(data.metrics.totalUsers) %></strong><span class="metric-help">Base utilisateur globale</span></article>
+  <article class="metric-card panel accent-sky"><span class="metric-label">Premium actifs</span><strong class="metric-value"><%= helpers.number(data.metrics.activeSubscribers) %></strong><span class="metric-help">Abonnes en cours</span></article>
+  <article class="metric-card panel accent-coral"><span class="metric-label">Comptes libres</span><strong class="metric-value"><%= helpers.number(data.metrics.freeUsers) %></strong><span class="metric-help">Sans abonnement actif</span></article>
+</section>
+
+<section class="content-grid-2 users-layout">
+  <article class="panel wide-panel">
+    <div class="section-head"><div><p class="eyebrow">Base utilisateurs</p><h3>Liste recente</h3></div><span class="soft-badge"><%= helpers.number(data.users.length) %> lignes chargees</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Utilisateur</th><th>Classe</th><th>Statut</th><th>Echeance</th></tr></thead>
+        <tbody>
+          <% if (!data.users.length) { %><tr><td colspan="4">Aucun utilisateur disponible.</td></tr><% } %>
+          <% data.users.forEach((user) => { %>
+            <tr>
+              <td><strong><%= `${user.prenoms} ${user.nom}` %></strong><small><%= user.email || user.phone || 'Contact non renseigne' %></small></td>
+              <td><%= user.classe %></td>
+              <td><span class="status-pill <%= Number(user.is_subscribed) === 1 ? 'status-pill-active' : 'status-pill-idle' %>"><%= Number(user.is_subscribed) === 1 ? 'Abonne' : 'Libre' %></span></td>
+              <td><%= helpers.date(user.subscription_expiry) %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <div class="panel-stack">
+    <article class="panel">
+      <div class="section-head"><div><p class="eyebrow">Repartition</p><h3>Par classe</h3></div></div>
+      <div class="mini-list">
+        <% data.classBreakdown.forEach((item) => { %>
+          <div class="mini-row"><div><strong><%= item.classe %></strong><small>Utilisateurs inscrits</small></div><span class="count-badge"><%= helpers.number(item.total) %></span></div>
+        <% }) %>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="section-head"><div><p class="eyebrow">Abonnements</p><h3>Activations recentes</h3></div></div>
+      <div class="stack-list">
+        <% if (!data.recentSubscriptions.length) { %><p class="empty-copy">Aucune activation pour le moment.</p><% } %>
+        <% data.recentSubscriptions.forEach((user) => { %>
+          <article class="list-card"><div><strong><%= `${user.prenoms} ${user.nom}` %></strong><small><%= user.classe %></small></div><div class="list-meta"><span class="status-pill status-pill-active">Premium</span><small><%= helpers.date(user.subscription_date) %></small></div></article>
+        <% }) %>
+      </div>
+    </article>
+  </div>
+</section>
+
+<%- include('partials/layout-end') %>
