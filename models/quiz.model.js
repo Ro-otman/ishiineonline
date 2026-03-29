@@ -37,6 +37,7 @@ export async function listLigueQuizCandidatesForMatiere({
     SELECT
       q.id_quiz,
       s.id_sa,
+      s.nom_sa,
       COALESCE(NULLIF(qe.timer_seconds, 0), 30) AS timer_seconds
     FROM programme p
     JOIN sa s ON s.id_programme = p.id_programme
@@ -47,6 +48,16 @@ export async function listLigueQuizCandidatesForMatiere({
     WHERE p.id_classe = ?
       AND p.id_matiere = ?
       AND (p.id_type IS NULL OR p.id_type = ?)
+      AND (
+        LOWER(s.nom_sa) NOT LIKE 'ligue %'
+        OR NOT EXISTS (
+          SELECT 1
+          FROM sa s2
+          JOIN quiz q2 ON q2.id_sa = s2.id_sa
+          WHERE s2.id_programme = s.id_programme
+            AND LOWER(s2.nom_sa) NOT LIKE 'ligue %'
+        )
+      )
   `;
 
   if (safeEligibleAt) {
@@ -95,6 +106,7 @@ export async function listLigueQuizCandidatesForMatiere({
     .map((row) => ({
       id_quiz: asInt(row.id_quiz),
       id_sa: asInt(row.id_sa),
+      sa_name: row.nom_sa,
       timer_seconds: normalizeTimerSeconds(row.timer_seconds),
     }))
     .filter((row) => row.id_quiz > 0 && row.id_sa > 0);

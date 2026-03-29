@@ -283,90 +283,110 @@ async function upsertSaReleaseSchedule(connection, { idSa, availableFromAt, isAc
   );
 }
 
-async function loadExistingQuizMapForSa(connection, idSa) {
+async function getQuizCountForSa(connection, idSa) {
   const [rows] = await connection.execute(
     `
-      SELECT id_quiz, question
+      SELECT COUNT(*) AS total
       FROM quiz
       WHERE id_sa = ?
     `,
     [idSa],
   );
-
-  return new Map(
-    rows.map((row) => [normalizeKey(cleanText(row.question)), { id_quiz: Number(row.id_quiz), question: row.question }]),
-  );
+  return Number(rows?.[0]?.total ?? 0);
 }
 
-async function saveQuiz(connection, {
+async function bulkInsertQuestionsForSa(connection, {
   idSa,
   subjectKey,
-  question,
-  existingQuizId,
+  questions,
 }) {
-  const cleanQuestion = cleanText(question.question_text);
-  const cleanOptions = (Array.isArray(question.options) ? question.options : [])
-    .map((option) => ({
-      text: cleanText(option?.text),
-      is_correct: option?.is_correct === true || Number(option?.is_correct) === 1 ? 1 : 0,
-    }))
-    .filter((option) => option.text.length > 0);
+  const preparedQuestions = [];
+  let cleanedPrefix = 0;
 
-  if (cleanQuestion.length === 0 || cleanOptions.length < 4) {
-    return { idQuiz: null, inserted: 0, updated: 0, cleanedPrefix: 0 };
+  for (const rawQuestion of Array.isArray(questions) ? questions : []) {
+    const questionText = cleanText(rawQuestion?.question_text);
+    if (!questionText) continue;
+
+    const options = (Array.isArray(rawQuestion?.options) ? rawQuestion.options : [])
+      .map((option) => ({
+        text: cleanText(option?.text),
+        is_correct: option?.is_correct === true || Number(option?.is_correct) === 1 ? 1 : 0,
+      }))
+      .filter((option) => option.text.length > 0);
+
+    if (options.length < 4) continue;
+    const correctCount = options.reduce((sum, option) => sum + (option.is_correct === 1 ? 1 : 0), 0);
+    if (correctCount < 1) continue;
+
+    if (questionText !== String(rawQuestion?.question_text ?? '').trim()) {
+      cleanedPrefix += 1;
+    }
+
+    preparedQuestions.push({
+      questionText,
+      options,
+      explanation: rawQuestion?.explanation ? cleanText(rawQuestion.explanation) : null,
+      tip: rawQuestion?.tip ? cleanText(rawQuestion.tip) : null,
+      difficulty: rawQuestion?.difficulty ? cleanText(rawQuestion.difficulty) : null,
+      timerSeconds: estimateTimerSeconds({
+        subjectKey,
+        questionText,
+        options,
+      }),
+    });
   }
 
-  const correctCount = cleanOptions.reduce((sum, option) => sum + (option.is_correct === 1 ? 1 : 0), 0);
-  if (correctCount < 1) {
-    return { idQuiz: null, inserted: 0, updated: 0, cleanedPrefix: 0 };
+  if (preparedQuestions.length === 0) {
+    return { inserted: 0, cleanedPrefix };
   }
 
-  let idQuiz = existingQuizId ?? null;
-  let inserted = 0;
-  let updated = 0;
-  const cleanedPrefix = cleanQuestion !== String(question.question_text ?? '').trim() ? 1 : 0;
-
-  if (idQuiz) {
-    await connection.execute(
-      `
-        UPDATE quiz
-        SET question = ?, id_sa = ?
-        WHERE id_quiz = ?
-      `,
-      [cleanQuestion, idSa, idQuiz],
-    );
-    updated = 1;
-    await connection.execute('DELETE FROM `options` WHERE id_quiz = ?', [idQuiz]);
-  } else {
-    const [result] = await connection.execute(
-      `
-        INSERT INTO quiz (question, id_sa)
-        VALUES (?, ?)
-      `,
-      [cleanQuestion, idSa],
-    );
-    idQuiz = Number(result.insertId);
-    inserted = 1;
+  const quizPlaceholders = preparedQuestions.map(() => '(?, ?)').join(', ');
+  const quizValues = [];
+  for (const item of preparedQuestions) {
+    quizValues.push(item.questionText, idSa);
   }
+  const [quizResult] = await connection.execute(
+    `
+      INSERT INTO quiz (question, id_sa)
+      VALUES ${quizPlaceholders}
+    `,
+    quizValues,
+  );
 
-  const optionPlaceholders = cleanOptions.map(() => '(?, ?, ?)').join(', ');
+  const firstQuizId = Number(quizResult.insertId ?? 0);
+  const quizIds = preparedQuestions.map((_, index) => firstQuizId + index);
+
+  const optionPlaceholders = [];
   const optionValues = [];
-  for (const option of cleanOptions) {
-    optionValues.push(option.text, option.is_correct, idQuiz);
+  const explanationPlaceholders = [];
+  const explanationValues = [];
+
+  for (let index = 0; index < preparedQuestions.length; index += 1) {
+    const quizId = quizIds[index];
+    const item = preparedQuestions[index];
+
+    for (const option of item.options) {
+      optionPlaceholders.push('(?, ?, ?)');
+      optionValues.push(option.text, option.is_correct, quizId);
+    }
+
+    explanationPlaceholders.push('(?, ?, ?, NULL, ?, ?)');
+    explanationValues.push(
+      quizId,
+      item.explanation,
+      item.tip,
+      item.difficulty,
+      item.timerSeconds,
+    );
   }
+
   await connection.execute(
     `
       INSERT INTO \`options\` (opt_text, is_correct, id_quiz)
-      VALUES ${optionPlaceholders}
+      VALUES ${optionPlaceholders.join(', ')}
     `,
     optionValues,
   );
-
-  const timerSeconds = estimateTimerSeconds({
-    subjectKey,
-    questionText: cleanQuestion,
-    options: cleanOptions,
-  });
 
   await connection.execute(
     `
@@ -377,23 +397,15 @@ async function saveQuiz(connection, {
         distractor_note,
         difficulty,
         timer_seconds
-      ) VALUES (?, ?, ?, NULL, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        explanation = VALUES(explanation),
-        tip = VALUES(tip),
-        difficulty = VALUES(difficulty),
-        timer_seconds = VALUES(timer_seconds)
+      ) VALUES ${explanationPlaceholders.join(', ')}
     `,
-    [
-      idQuiz,
-      question.explanation ? cleanText(question.explanation) : null,
-      question.tip ? cleanText(question.tip) : null,
-      question.difficulty ? cleanText(question.difficulty) : null,
-      timerSeconds,
-    ],
+    explanationValues,
   );
 
-  return { idQuiz, inserted, updated, cleanedPrefix };
+  return {
+    inserted: preparedQuestions.length,
+    cleanedPrefix,
+  };
 }
 
 async function deactivateLegacyLigueSa(connection, idProgramme, importedSaIds) {
@@ -517,7 +529,7 @@ try {
     programmes: byProgrammeKey.size,
     saInsertedOrMatched: 0,
     quizInserted: 0,
-    quizUpdated: 0,
+    saSkippedBecauseAlreadyLoaded: 0,
     cleanedPrefixedInImport: 0,
     cleanedLegacyPrefixes: 0,
     legacyLiguesDeactivated: 0,
@@ -525,7 +537,6 @@ try {
   };
 
   try {
-    await connection.beginTransaction();
     const academicYearStart = resolveAcademicYearStart(new Date());
 
     for (const { resolved, items } of byProgrammeKey.values()) {
@@ -539,7 +550,6 @@ try {
       const stepDays = sortedItems.length <= 1
         ? 0
         : Math.max(7, Math.floor(210 / sortedItems.length));
-      const importedSaIds = [];
 
       for (let index = 0; index < sortedItems.length; index += 1) {
         const item = sortedItems[index];
@@ -554,7 +564,6 @@ try {
           idProgramme: resolved.programme.id_programme,
           saName,
         });
-        importedSaIds.push(sa.id_sa);
         stats.saInsertedOrMatched += 1;
 
         const availableFromAt = toSqlDateTime(
@@ -566,37 +575,45 @@ try {
           isActive: true,
         });
 
-        const existingQuizMap = await loadExistingQuizMapForSa(connection, sa.id_sa);
         const questions = Array.isArray(item.raw?.questions) ? item.raw.questions : [];
-
-        for (const question of questions) {
-          const key = normalizeKey(cleanText(question.question_text));
-          const existing = existingQuizMap.get(key) ?? null;
-          const saved = await saveQuiz(connection, {
-            idSa: sa.id_sa,
-            subjectKey: item.raw?.route?.matiere_key ?? item.matiereSegment,
-            question,
-            existingQuizId: existing?.id_quiz ?? null,
-          });
-          if (!saved.idQuiz) continue;
-          stats.quizInserted += saved.inserted;
-          stats.quizUpdated += saved.updated;
-          stats.cleanedPrefixedInImport += saved.cleanedPrefix;
-          existingQuizMap.set(key, { id_quiz: saved.idQuiz, question: cleanText(question.question_text) });
+        const existingQuizCount = await getQuizCountForSa(connection, sa.id_sa);
+        if (existingQuizCount >= questions.length && questions.length > 0) {
+          stats.saSkippedBecauseAlreadyLoaded += 1;
+          continue;
         }
-      }
+        if (existingQuizCount > 0 && existingQuizCount < questions.length) {
+          await connection.execute(
+            `
+              DELETE qe
+              FROM quiz_explanations qe
+              JOIN quiz q ON q.id_quiz = qe.id_quiz
+              WHERE q.id_sa = ?
+            `,
+            [sa.id_sa],
+          );
+          await connection.execute(
+            `
+              DELETE o
+              FROM \`options\` o
+              JOIN quiz q ON q.id_quiz = o.id_quiz
+              WHERE q.id_sa = ?
+            `,
+            [sa.id_sa],
+          );
+          await connection.execute('DELETE FROM quiz WHERE id_sa = ?', [sa.id_sa]);
+        }
 
-      stats.legacyLiguesDeactivated += await deactivateLegacyLigueSa(
-        connection,
-        resolved.programme.id_programme,
-        importedSaIds,
-      );
+        const saved = await bulkInsertQuestionsForSa(connection, {
+          idSa: sa.id_sa,
+          subjectKey: item.raw?.route?.matiere_key ?? item.matiereSegment,
+          questions,
+        });
+        stats.quizInserted += saved.inserted;
+        stats.cleanedPrefixedInImport += saved.cleanedPrefix;
+      }
     }
 
     stats.cleanedLegacyPrefixes = await cleanBracketPrefixedQuestions(connection);
-    stats.futureWeeklyBankRowsDeleted = await invalidateFutureWeeklyBanks(connection);
-
-    await connection.commit();
 
     const [summaryRows] = await connection.query(`
       SELECT COUNT(*) AS total_quiz, COUNT(DISTINCT id_sa) AS total_sa
@@ -611,9 +628,6 @@ try {
       totals: summaryRows[0] ?? {},
     }, null, 2));
   } catch (error) {
-    try {
-      await connection.rollback();
-    } catch {}
     console.error(JSON.stringify({
       ok: false,
       message: error?.message ?? String(error),

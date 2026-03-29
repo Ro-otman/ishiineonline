@@ -28,6 +28,7 @@ function normalizeBankRow(row) {
     id_serie: asInt(row.id_serie),
     id_matiere: asInt(row.id_matiere),
     id_sa: asInt(row.id_sa),
+    sa_name: String(row.nom_sa ?? '').trim(),
     question_index: asInt(row.question_index),
     id_quiz: asInt(row.id_quiz),
     timer_seconds: normalizeTimerSeconds(row.timer_seconds),
@@ -56,19 +57,20 @@ export async function listWeeklyLigueQuizBank({ week_key, id_classe, id_serie, i
   const pool = getPool();
   const params = [week_key, id_classe, id_serie];
   let sql = `
-    SELECT week_key, id_classe, id_serie, id_matiere, id_sa, question_index, id_quiz, timer_seconds
-    FROM ligue_weekly_quiz_bank
-    WHERE week_key = ?
-      AND id_classe = ?
-      AND id_serie = ?
+    SELECT bank.week_key, bank.id_classe, bank.id_serie, bank.id_matiere, bank.id_sa, s.nom_sa, bank.question_index, bank.id_quiz, bank.timer_seconds
+    FROM ligue_weekly_quiz_bank bank
+    JOIN sa s ON s.id_sa = bank.id_sa
+    WHERE bank.week_key = ?
+      AND bank.id_classe = ?
+      AND bank.id_serie = ?
   `;
 
   if (id_matiere != null) {
-    sql += ' AND id_matiere = ?';
+    sql += ' AND bank.id_matiere = ?';
     params.push(id_matiere);
   }
 
-  sql += ' ORDER BY id_matiere ASC, question_index ASC';
+  sql += ' ORDER BY bank.id_matiere ASC, bank.question_index ASC';
   const [rows] = await pool.query(sql, params);
   return rows.map(normalizeBankRow);
 }
@@ -124,7 +126,7 @@ async function listRecentUsedQuizIds({
     .filter((value) => value > 0);
 }
 
-function pickBalancedCandidates({ candidates, limit, seed }) {
+export function pickBalancedCandidates({ candidates, limit, seed }) {
   const safeLimit = Math.max(1, asInt(limit, 1));
   const bySa = new Map();
 
@@ -194,7 +196,11 @@ export async function ensureWeeklyLigueQuizBank({
   });
   const expectedRows = safeSubjects.length * safeQuestionCount;
   const groupedExisting = groupWeeklyQuizBankBySubject(existing);
+  const containsLegacySa = existing.some((row) =>
+    String(row.sa_name ?? '').trim().toLowerCase().startsWith('ligue ')
+  );
   const isComplete =
+    !containsLegacySa &&
     existing.length === expectedRows &&
     safeSubjects.every((subject) => {
       const subjectId = asInt(subject.id_matiere ?? subject.idMatiere);

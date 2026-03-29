@@ -11,6 +11,11 @@ import {
   submitRun,
 } from '../controllers/ligueQuiz.controller.js';
 import {
+  listWhiteExamSubjects,
+  startWhiteExamRun,
+  submitWhiteExamRun,
+} from '../controllers/whiteExam.controller.js';
+import {
   getLigueProfile,
   registerToLigue,
 } from '../controllers/ligueRegistration.controller.js';
@@ -39,6 +44,9 @@ router.post('/challenges/:challengeId/submission', saveChallengeSubmission);
 router.post('/rooms/:roomId/subjects/:subjectId/run', startSubjectRun);
 router.post('/runs/:runId/submit', submitRun);
 router.get('/rooms/:roomId/leaderboard', leaderboard);
+router.get('/white-exam/subjects', listWhiteExamSubjects);
+router.post('/white-exam/subjects/:subjectId/run', startWhiteExamRun);
+router.post('/white-exam/runs/:runId/submit', submitWhiteExamRun);
 
 export default router;
 

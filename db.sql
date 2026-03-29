@@ -12,6 +12,9 @@ DROP TABLE IF EXISTS ligue_challenge_comments;
 DROP TABLE IF EXISTS ligue_challenge_likes;
 DROP TABLE IF EXISTS ligue_challenge_submissions;
 DROP TABLE IF EXISTS ligue_challenges;
+DROP TABLE IF EXISTS white_exam_run_answers;
+DROP TABLE IF EXISTS white_exam_run_questions;
+DROP TABLE IF EXISTS white_exam_runs;
 DROP TABLE IF EXISTS ligue_run_answers;
 DROP TABLE IF EXISTS ligue_run_questions;
 DROP TABLE IF EXISTS ligue_runs;
@@ -877,6 +880,92 @@ CREATE TABLE ligue_run_answers (
     ON DELETE RESTRICT
     ON UPDATE CASCADE,
   CONSTRAINT fk_ligue_run_answers_option FOREIGN KEY (id_options)
+    REFERENCES `options`(id_options)
+    ON DELETE SET NULL
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE white_exam_runs (
+  id_run CHAR(36) PRIMARY KEY,
+  week_key VARCHAR(32) NOT NULL,
+  id_user VARCHAR(255) NOT NULL,
+  id_classe INT NOT NULL,
+  id_type INT NULL,
+  id_matiere INT NOT NULL,
+
+  started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  submitted_at DATETIME NULL,
+
+  total_questions INT NOT NULL,
+  correct_count INT NOT NULL DEFAULT 0,
+  total_response_time_ms INT NOT NULL DEFAULT 0,
+  score_percent DOUBLE NOT NULL DEFAULT 0,
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  KEY idx_white_exam_runs_lookup (week_key, id_user, id_classe, id_type, id_matiere),
+  KEY idx_white_exam_runs_user (id_user, submitted_at),
+
+  CONSTRAINT fk_white_exam_runs_user FOREIGN KEY (id_user)
+    REFERENCES users(id_users)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_white_exam_runs_classe FOREIGN KEY (id_classe)
+    REFERENCES classes(id_classe)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_white_exam_runs_type FOREIGN KEY (id_type)
+    REFERENCES type_series(id_type)
+    ON DELETE SET NULL
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_white_exam_runs_matiere FOREIGN KEY (id_matiere)
+    REFERENCES matieres(id_matiere)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE white_exam_run_questions (
+  id_run CHAR(36) NOT NULL,
+  question_index INT NOT NULL,
+  id_quiz INT NOT NULL,
+  timer_seconds INT NOT NULL DEFAULT 30,
+
+  PRIMARY KEY (id_run, question_index),
+  UNIQUE KEY uq_white_exam_run_questions_run_quiz (id_run, id_quiz),
+  KEY idx_white_exam_run_questions_quiz (id_quiz),
+
+  CONSTRAINT fk_white_exam_run_questions_run FOREIGN KEY (id_run)
+    REFERENCES white_exam_runs(id_run)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_white_exam_run_questions_quiz FOREIGN KEY (id_quiz)
+    REFERENCES quiz(id_quiz)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE white_exam_run_answers (
+  id_run CHAR(36) NOT NULL,
+  id_quiz INT NOT NULL,
+  id_options INT NULL,
+
+  is_correct TINYINT(1) NOT NULL,
+  response_time_ms INT,
+  answered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id_run, id_quiz),
+  KEY idx_white_exam_run_answers_run (id_run),
+
+  CONSTRAINT fk_white_exam_run_answers_run FOREIGN KEY (id_run)
+    REFERENCES white_exam_runs(id_run)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_white_exam_run_answers_quiz FOREIGN KEY (id_quiz)
+    REFERENCES quiz(id_quiz)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_white_exam_run_answers_option FOREIGN KEY (id_options)
     REFERENCES `options`(id_options)
     ON DELETE SET NULL
     ON UPDATE CASCADE
