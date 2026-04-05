@@ -3,6 +3,7 @@ import {
   acknowledgeNotification,
   listUserNotifications,
 } from '../services/notifications.service.js';
+import { runNotificationAutomationCycle, sendAdminCampaign } from '../services/notificationAutomation.service.js';
 import {
   registerDevicePush,
   unregisterDevicePush,
@@ -141,6 +142,56 @@ export async function markAllNotificationsAsRead(req, res, next) {
     res.json({
       ok: true,
       updatedCount: result.updatedCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function broadcastAdminCampaign(req, res, next) {
+  try {
+    const body = req.body || {};
+    const kind = asString(body.kind || body.template || 'announcement').toLowerCase();
+    const audience = asString(body.audience || 'all').toLowerCase() || 'all';
+    const category = asString(body.category || 'info').toLowerCase() || 'info';
+    const title = asString(body.title);
+    const message = asString(body.message);
+
+    if (kind !== 'announcement' && kind !== 'review_campaign') {
+      throw buildError('kind invalide.', 400, 'INVALID_NOTIFICATION_KIND');
+    }
+
+    if (!message && kind === 'announcement') {
+      throw buildError('message requis pour une annonce.', 400, 'MESSAGE_REQUIRED');
+    }
+
+    const result = await sendAdminCampaign({
+      kind,
+      title,
+      message,
+      audience,
+      category,
+      campaignKey: body.campaignKey || body.campaign_key,
+      payload: {
+        requestedBy: asString(req.admin?.idAdmin || req.admin?.id_admin || req.admin?.displayName),
+      },
+    });
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function runAdminNotificationJobs(req, res, next) {
+  try {
+    const result = await runNotificationAutomationCycle();
+    res.json({
+      ok: true,
+      ...result,
     });
   } catch (error) {
     next(error);

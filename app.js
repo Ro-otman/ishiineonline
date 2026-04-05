@@ -17,6 +17,7 @@ import { errorHandler } from "./middlewares/errorHandler.js";
 import { notFound } from "./middlewares/notFound.js";
 import adminRouter from "./routes/admin.routes.js";
 import routes from "./routes/index.js";
+import { startNotificationAutomation } from "./services/notificationAutomation.service.js";
 import { setRealtimeServer } from "./services/realtimeGateway.service.js";
 import { registerLigueSockets } from "./sockets/ligue.socket.js";
 import { registerNotificationSockets } from "./sockets/notification.socket.js";
@@ -78,6 +79,7 @@ async function start() {
   setRealtimeServer(io);
   registerLigueSockets(io);
   registerNotificationSockets(io);
+  startNotificationAutomation();
 
   httpServer.listen(env.PORT, "0.0.0.0", async () => {
     console.log(

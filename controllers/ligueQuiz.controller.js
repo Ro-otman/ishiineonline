@@ -17,8 +17,10 @@ import {
   listCorrectOptionIdsByQuizIds,
 } from '../models/quiz.model.js';
 import { getLigueProfileByUserId } from '../models/ligueProfiles.model.js';
+import { getMatiereById } from '../models/matieres.model.js';
 import { resolveLigueRoomContext } from '../services/ligueRoomContext.service.js';
 import { computeQuestionWindow } from '../services/ligueSchedule.service.js';
+import { notifyLigueResult } from '../services/notifications.service.js';
 import { getSubscriptionStatus } from '../services/subscription.service.js';
 
 function asString(value) {
@@ -437,6 +439,26 @@ export async function submitRun(req, res, next) {
       total_response_time_ms: totalResponseTimeMs,
       score_percent: scorePercent,
     });
+
+    try {
+      const matiere = await getMatiereById(run.id_matiere);
+      await notifyLigueResult({
+        userId,
+        runId,
+        weekKey: run.week_key,
+        subjectName: matiere?.nom_matiere || '',
+        scorePercent,
+        correctCount,
+        totalQuestions,
+      });
+    } catch (notificationError) {
+      console.error('[ligue] result notification failed', {
+        runId,
+        userId,
+        code: notificationError?.code,
+        message: notificationError?.message,
+      });
+    }
 
     return res.json({
       ok: true,

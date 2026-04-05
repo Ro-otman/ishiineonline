@@ -15,3 +15,17 @@ export async function listMatieresForClasseAndType({ id_classe, id_type }) {
     [id_classe, id_type]
   );
 }
+
+export async function getMatiereById(id_matiere) {
+  const rows = await execute(
+    `
+      SELECT id_matiere, nom_matiere
+      FROM matieres
+      WHERE id_matiere = ?
+      LIMIT 1
+    `,
+    [id_matiere],
+  );
+
+  return rows[0] ?? null;
+}

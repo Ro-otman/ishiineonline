@@ -4,7 +4,6 @@ import {
   upsertPaymentRecord,
 } from '../models/payments.model.js';
 import { activateUserSubscription, getUserById } from '../models/users.model.js';
-import { notifyPaymentSuccess } from './notifications.service.js';
 
 const DEFAULT_API_BASE_URL = 'https://api.fedapay.com/v1';
 const DEFAULT_PLAN = 'premium_monthly';
@@ -410,28 +409,6 @@ async function markSubscriptionApproved(userId, durationDays) {
   return { updated: true, user: updatedUser };
 }
 
-async function notifyPaymentSuccessSafely({
-  userId,
-  transactionId,
-  amount,
-  currencyIso,
-  planKey,
-  subscriptionExpiry,
-}) {
-  try {
-    await notifyPaymentSuccess({
-      userId,
-      transactionId,
-      amount,
-      currencyIso,
-      planKey,
-      subscriptionExpiry,
-    });
-  } catch (_error) {
-    // Les notifications ne doivent jamais bloquer la validation du paiement.
-  }
-}
-
 async function persistTransactionSnapshot({
   payload,
   transactionId,
@@ -609,17 +586,6 @@ export async function verifyPaymentCheckout({
     const planConfig = resolvePlanConfig(payment?.plan_key || DEFAULT_PLAN);
     const activation = await markSubscriptionApproved(effectiveUserId, planConfig.durationDays);
     subscriptionUpdated = activation.updated;
-
-    if (activation.updated) {
-      await notifyPaymentSuccessSafely({
-        userId: effectiveUserId,
-        transactionId: effectiveTransactionId,
-        amount: payment?.amount,
-        currencyIso: payment?.currency_iso,
-        planKey: payment?.plan_key || DEFAULT_PLAN,
-        subscriptionExpiry: activation.user?.subscription_expiry,
-      });
-    }
   }
 
   return {
@@ -681,17 +647,6 @@ export async function handlePaymentWebhook(body = {}) {
 
   const planConfig = resolvePlanConfig(payment?.plan_key || DEFAULT_PLAN);
   const activation = await markSubscriptionApproved(effectiveUserId, planConfig.durationDays);
-
-  if (activation.updated) {
-    await notifyPaymentSuccessSafely({
-      userId: effectiveUserId,
-      transactionId,
-      amount: payment?.amount,
-      currencyIso: payment?.currency_iso,
-      planKey: payment?.plan_key || DEFAULT_PLAN,
-      subscriptionExpiry: activation.user?.subscription_expiry,
-    });
-  }
 
   return {
     accepted: true,

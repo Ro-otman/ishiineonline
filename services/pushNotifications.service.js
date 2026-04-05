@@ -113,8 +113,7 @@ export async function sendPushNotificationToUser({ userId, notification } = {}) 
   const rows = await listActiveDevicePushTokensByUser(safeUserId);
   const tokens = rows
     .map((row) => asString(row.fcm_token))
-    .where((token, index, list) => token && list.indexOf(token) == index)
-    .toList();
+    .filter((token, index, list) => token && list.indexOf(token) === index);
 
   if (tokens.length === 0) {
     return { sentCount: 0, skipped: true };

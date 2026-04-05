@@ -14,6 +14,7 @@ import {
   logoutAdmin,
   renderAdminLogin,
 } from '../controllers/adminAuth.controller.js';
+import { broadcastAdminCampaign, runAdminNotificationJobs } from '../controllers/notifications.controller.js';
 import { redirectAuthenticatedAdmin, requireAdminDashboardAuth } from '../middlewares/adminAuth.js';
 
 const router = Router();
@@ -32,5 +33,7 @@ router.post('/quiz', createAdminQuiz);
 router.get('/ligue', renderAdminLigue);
 router.post('/ligue/settings', saveAdminLigueSettings);
 router.get('/payments', renderAdminPayments);
+router.post('/notifications/campaign', broadcastAdminCampaign);
+router.post('/notifications/run-jobs', runAdminNotificationJobs);
 
 export default router;
