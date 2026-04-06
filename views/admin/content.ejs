@@ -67,6 +67,86 @@
 
       <button type="submit" class="primary-button"><i class='bx bx-send'></i> Publier le quiz</button>
     </form>
+
+    <div class="content-form-divider" aria-hidden="true"></div>
+
+    <div class="section-head content-section-head content-section-head-sub">
+      <div>
+        <p class="eyebrow"><i class='bx bx-trophy'></i> Ligue</p>
+        <h3><i class='bx bx-bulb'></i> Ajouter un d&eacute;fi</h3>
+      </div>
+      <span class="soft-badge"><i class='bx bx-message-dots'></i> Interactions activ&eacute;es</span>
+    </div>
+
+    <form method="post" action="/admin/content/challenge" class="quiz-form challenge-form">
+      <div class="form-split">
+        <label class="content-field">
+          <span class="content-field-label"><i class='bx bx-calendar-week'></i> Semaine</span>
+          <input type="date" name="week_key" value="<%= challengeForm.week_key || '' %>" required />
+        </label>
+        <label class="content-field">
+          <span class="content-field-label"><i class='bx bx-time-five'></i> Fin du d&eacute;fi</span>
+          <input type="datetime-local" name="deadline_at" value="<%= challengeForm.deadline_at || '' %>" required />
+        </label>
+      </div>
+
+      <div class="form-split">
+        <label class="content-field">
+          <span class="content-field-label"><i class='bx bx-bookmark-heart'></i> Mati&egrave;re</span>
+          <input type="text" name="subject" value="<%= challengeForm.subject || '' %>" placeholder="Ex : Maths, Physique, Philosophie" required />
+        </label>
+        <label class="content-field">
+          <span class="content-field-label"><i class='bx bx-trending-up'></i> Difficult&eacute;</span>
+          <select name="difficulty">
+            <% ['Facile', 'Moyen', 'Difficile'].forEach((level) => { %>
+              <option value="<%= level %>" <%= String(challengeForm.difficulty || 'Moyen') === level ? 'selected' : '' %>><%= level %></option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+
+      <label class="content-field">
+        <span class="content-field-label"><i class='bx bx-edit-alt'></i> Titre du d&eacute;fi</span>
+        <input type="text" name="title" value="<%= challengeForm.title || '' %>" maxlength="160" placeholder="Ex : D&eacute;fi vedette de la semaine" required />
+      </label>
+
+      <label class="content-field">
+        <span class="content-field-label"><i class='bx bx-news'></i> Consigne</span>
+        <textarea name="prompt" rows="5" placeholder="Explique clairement le travail demand&eacute; et le niveau de d&eacute;tail attendu." required><%= challengeForm.prompt || '' %></textarea>
+      </label>
+
+      <div class="form-split">
+        <label class="content-field">
+          <span class="content-field-label"><i class='bx bx-user-circle'></i> Auteur affich&eacute;</span>
+          <input type="text" name="author_name" value="<%= challengeForm.author_name || 'iShiine' %>" maxlength="80" placeholder="Ex : iShiine" required />
+        </label>
+        <label class="content-field">
+          <span class="content-field-label"><i class='bx bx-stopwatch'></i> Dur&eacute;e estim&eacute;e (minutes)</span>
+          <input type="number" name="estimated_minutes" min="1" max="600" value="<%= challengeForm.estimated_minutes || '10' %>" required />
+        </label>
+      </div>
+
+      <div class="form-split form-split-large">
+        <label class="content-field">
+          <span class="content-field-label"><i class='bx bx-medal'></i> Points de r&eacute;compense</span>
+          <input type="number" name="reward_points" min="0" max="100000" value="<%= challengeForm.reward_points || '50' %>" required />
+        </label>
+        <label class="content-field">
+          <span class="content-field-label"><i class='bx bx-group'></i> Participants de base</span>
+          <input type="number" name="base_participants" min="0" max="1000000" value="<%= challengeForm.base_participants || '0' %>" required />
+        </label>
+        <label class="content-field">
+          <span class="content-field-label"><i class='bx bx-sort-a-z'></i> Ordre d'affichage</span>
+          <input type="number" name="sort_order" min="0" max="100000" value="<%= challengeForm.sort_order || '1' %>" required />
+        </label>
+      </div>
+
+      <input type="hidden" name="author_verified_blue" value="<%= String(challengeForm.author_verified_blue || '1') === '1' ? '1' : '0' %>" />
+      <input type="hidden" name="featured" value="<%= String(challengeForm.featured || '') === '1' ? '1' : '0' %>" />
+      <input type="hidden" name="is_active" value="<%= String(challengeForm.is_active || '1') === '1' ? '1' : '0' %>" />
+
+      <button type="submit" class="primary-button"><i class='bx bx-rocket'></i> Publier le d&eacute;fi</button>
+    </form>
   </article>
 
   <div class="panel-stack content-side-stack">

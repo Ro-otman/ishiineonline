@@ -17,10 +17,10 @@ function asNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function cleanText(value, { required = false, maxLength = 0 } = {}) {
+function cleanText(value, { required = false, maxLength = 0, requiredMessage = '' } = {}) {
   const text = String(value ?? '').trim();
   if (required && !text) {
-    const err = new Error('Tous les champs obligatoires du quiz doivent etre renseignes.');
+    const err = new Error(requiredMessage || 'Tous les champs obligatoires du quiz doivent etre renseignes.');
     err.statusCode = 400;
     throw err;
   }
@@ -69,6 +69,22 @@ function normalizeOptionalInt(value) {
     throw err;
   }
   return parsed;
+}
+
+function normalizeBooleanFlag(value, defaultValue = false) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return defaultValue;
+  return ['1', 'true', 'on', 'yes'].includes(raw);
+}
+
+function normalizeWeekKey(value) {
+  const weekKey = cleanText(value, { required: true, maxLength: 32 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekKey)) {
+    const err = new Error('La semaine du defi doit etre au format YYYY-MM-DD.');
+    err.statusCode = 400;
+    throw err;
+  }
+  return weekKey;
 }
 
 function currentIso() {
@@ -446,6 +462,106 @@ export async function createQuizFromDashboard(input) {
 
     await connection.commit();
     return { id_quiz: idQuiz, id_sa: idSa, timer_seconds: timerSeconds };
+  } catch (error) {
+    try { await connection.rollback(); } catch {}
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function createChallengeFromDashboard(input) {
+  const weekKey = normalizeWeekKey(input.week_key);
+  const title = cleanText(input.title, {
+    required: true,
+    maxLength: 160,
+    requiredMessage: 'Le titre du defi est obligatoire.',
+  });
+  const prompt = cleanText(input.prompt, {
+    required: true,
+    requiredMessage: 'La consigne du defi est obligatoire.',
+  });
+  const subject = cleanText(input.subject, {
+    required: true,
+    maxLength: 80,
+    requiredMessage: 'La matiere du defi est obligatoire.',
+  });
+  const difficulty = cleanText(input.difficulty, {
+    required: true,
+    maxLength: 32,
+    requiredMessage: 'La difficulte du defi est obligatoire.',
+  });
+  const authorName = cleanText(input.author_name, {
+    required: true,
+    maxLength: 80,
+    requiredMessage: "Le nom d'auteur affiche est obligatoire.",
+  });
+  const authorVerifiedBlue = normalizeBooleanFlag(input.author_verified_blue, false);
+  const rewardPoints = normalizePositiveInt(input.reward_points, 'La recompense en points', {
+    min: 0,
+    max: 100000,
+  });
+  const baseParticipants = normalizePositiveInt(input.base_participants, 'Le nombre de participants de base', {
+    min: 0,
+    max: 1000000,
+  });
+  const estimatedMinutes = normalizePositiveInt(input.estimated_minutes, 'Le temps estime', {
+    min: 1,
+    max: 600,
+  });
+  const deadlineAt = normalizeDateTimeLocalToUtcSql(input.deadline_at);
+  const featured = normalizeBooleanFlag(input.featured, false);
+  const sortOrder = normalizePositiveInt(input.sort_order, "L'ordre d'affichage", {
+    min: 0,
+    max: 100000,
+  });
+  const isActive = normalizeBooleanFlag(input.is_active, false);
+
+  const connection = await getPool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const [result] = await connection.execute(
+      `
+        INSERT INTO ligue_challenges (
+          week_key,
+          title,
+          prompt,
+          subject,
+          difficulty,
+          author_name,
+          author_verified_blue,
+          reward_points,
+          base_participants,
+          estimated_minutes,
+          deadline_at,
+          featured,
+          sort_order,
+          is_active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        weekKey,
+        title,
+        prompt,
+        subject,
+        difficulty,
+        authorName,
+        authorVerifiedBlue ? 1 : 0,
+        rewardPoints,
+        baseParticipants,
+        estimatedMinutes,
+        deadlineAt,
+        featured ? 1 : 0,
+        sortOrder,
+        isActive ? 1 : 0,
+      ],
+    );
+
+    await connection.commit();
+    return {
+      id_challenge: Number(result.insertId),
+      week_key: weekKey,
+    };
   } catch (error) {
     try { await connection.rollback(); } catch {}
     throw error;

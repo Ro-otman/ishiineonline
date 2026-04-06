@@ -1,5 +1,6 @@
 ﻿import { env } from '../config/env.js';
 import {
+  createChallengeFromDashboard,
   createQuizFromDashboard,
   getAdminContentPageData,
   getAdminLiguePageData,
@@ -8,7 +9,7 @@ import {
   getAdminUsersPageData,
   saveLigueSettingsFromDashboard,
 } from '../models/adminDashboard.model.js';
-import { formatDateTimeForDisplay } from '../utils/dateTime.js';
+import { formatDateTimeForDisplay, formatDateTimeLocalInputValue } from '../utils/dateTime.js';
 
 function normalizeForm(body = {}) {
   return {
@@ -36,6 +37,70 @@ function normalizeLeagueSettingsForm(body = {}) {
     questions_per_subject: String(body.questions_per_subject ?? '10').trim() || '10',
     margin_seconds: String(body.margin_seconds ?? '15').trim() || '15',
     break_minutes: String(body.break_minutes ?? '5').trim() || '5',
+  };
+}
+
+function formatDateOnlyUtc(value) {
+  return [
+    value.getUTCFullYear(),
+    String(value.getUTCMonth() + 1).padStart(2, '0'),
+    String(value.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function getCurrentWeekStartUtc(now = new Date()) {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const weekday = start.getUTCDay();
+  const diffToMonday = weekday === 0 ? -6 : 1 - weekday;
+  start.setUTCDate(start.getUTCDate() + diffToMonday);
+  return start;
+}
+
+function buildDefaultChallengeForm() {
+  const weekStart = getCurrentWeekStartUtc();
+  const deadline = new Date(Date.UTC(
+    weekStart.getUTCFullYear(),
+    weekStart.getUTCMonth(),
+    weekStart.getUTCDate() + 6,
+    23,
+    59,
+    0,
+  ));
+
+  return {
+    week_key: formatDateOnlyUtc(weekStart),
+    title: '',
+    prompt: '',
+    subject: '',
+    difficulty: 'Moyen',
+    author_name: 'iShiine',
+    author_verified_blue: '1',
+    reward_points: '50',
+    base_participants: '0',
+    estimated_minutes: '10',
+    deadline_at: formatDateTimeLocalInputValue(deadline),
+    featured: '',
+    sort_order: '1',
+    is_active: '1',
+  };
+}
+
+function normalizeChallengeForm(body = {}) {
+  return {
+    week_key: String(body.week_key ?? '').trim(),
+    title: String(body.title ?? '').trim(),
+    prompt: String(body.prompt ?? '').trim(),
+    subject: String(body.subject ?? '').trim(),
+    difficulty: String(body.difficulty ?? 'Moyen').trim() || 'Moyen',
+    author_name: String(body.author_name ?? 'iShiine').trim() || 'iShiine',
+    author_verified_blue: body.author_verified_blue ? '1' : '',
+    reward_points: String(body.reward_points ?? '50').trim() || '50',
+    base_participants: String(body.base_participants ?? '0').trim() || '0',
+    estimated_minutes: String(body.estimated_minutes ?? '10').trim() || '10',
+    deadline_at: String(body.deadline_at ?? '').trim(),
+    featured: body.featured ? '1' : '',
+    sort_order: String(body.sort_order ?? '1').trim() || '1',
+    is_active: body.is_active ? '1' : '',
   };
 }
 
@@ -67,7 +132,10 @@ function buildHelpers() {
   };
 }
 
-async function renderAdminView(res, { statusCode = 200, view, page, data, feedback = {}, form = {} } = {}) {
+async function renderAdminView(
+  res,
+  { statusCode = 200, view, page, data, feedback = {}, form = {}, challengeForm = {} } = {},
+) {
   return res.status(statusCode).render(`admin/${view}`, {
     appTitle: env.ADMIN_DASHBOARD_TITLE || 'iShiine Admin',
     page,
@@ -78,6 +146,7 @@ async function renderAdminView(res, { statusCode = 200, view, page, data, feedba
       error: String(feedback.error || '').trim(),
     },
     form,
+    challengeForm,
   });
 }
 
@@ -133,6 +202,7 @@ export async function renderAdminContent(req, res, next) {
       data,
       feedback: { success: req.query?.success, error: req.query?.error },
       form: { timer_seconds: '30' },
+      challengeForm: buildDefaultChallengeForm(),
     });
   } catch (error) {
     next(error);
@@ -201,6 +271,36 @@ export async function createAdminQuiz(req, res, next) {
         data,
         feedback: { error: getSafeFeedbackMessage(error, "Impossible d'ajouter le quiz pour le moment.") },
         form,
+        challengeForm: buildDefaultChallengeForm(),
+      });
+    } catch (renderError) {
+      next(renderError);
+    }
+  }
+}
+
+export async function createAdminChallenge(req, res, next) {
+  const challengeForm = normalizeChallengeForm(req.body);
+  try {
+    const created = await createChallengeFromDashboard(challengeForm);
+    const success = encodeURIComponent(`Defi ajoute avec succes (#${created.id_challenge}).`);
+    return res.redirect(`/admin/content?success=${success}`);
+  } catch (error) {
+    try {
+      const data = await getAdminContentPageData();
+      await renderAdminView(res, {
+        statusCode: Number(error?.statusCode) || 400,
+        view: 'content',
+        page: {
+          section: 'content',
+          title: 'Contenu pedagogique',
+          kicker: 'Creation',
+          intro: 'Ajoute de nouveaux quiz, garde un oeil sur les programmes et publie les defis de la ligue.',
+        },
+        data,
+        feedback: { error: getSafeFeedbackMessage(error, "Impossible d'ajouter le defi pour le moment.") },
+        form: { timer_seconds: '30' },
+        challengeForm,
       });
     } catch (renderError) {
       next(renderError);

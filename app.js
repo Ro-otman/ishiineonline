@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 
 import { createServer } from "node:http";
 import fs from "node:fs/promises";
@@ -114,4 +114,3 @@ start().catch((err) => {
   });
   process.exit(1);
 });
-

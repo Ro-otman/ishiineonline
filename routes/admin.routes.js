@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import {
+  createAdminChallenge,
   createAdminQuiz,
   renderAdminContent,
   renderAdminLigue,
@@ -29,6 +30,7 @@ router.get('/', renderAdminOverview);
 router.get('/users', renderAdminUsers);
 router.get('/content', renderAdminContent);
 router.post('/content/quiz', createAdminQuiz);
+router.post('/content/challenge', createAdminChallenge);
 router.post('/quiz', createAdminQuiz);
 router.get('/ligue', renderAdminLigue);
 router.post('/ligue/settings', saveAdminLigueSettings);

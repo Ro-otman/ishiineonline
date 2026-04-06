@@ -1623,6 +1623,12 @@ td small {
   white-space: nowrap;
 }
 
+.content-form-divider {
+  height: 1px;
+  margin: 28px 0;
+  background: linear-gradient(90deg, rgba(28, 141, 244, 0), rgba(28, 141, 244, 0.26), rgba(117, 103, 248, 0));
+}
+
 .content-field {
   display: grid;
   gap: 8px;
@@ -1646,8 +1652,24 @@ td small {
   font-size: 13px;
 }
 
+.content-section-head-sub {
+  align-items: flex-start;
+}
+
+.content-section-subcopy {
+  margin: 8px 0 0;
+  max-width: 720px;
+  color: var(--text-soft);
+  line-height: 1.6;
+  font-size: 14px;
+}
+
 .content-side-stack {
   align-self: start;
+}
+
+.challenge-form {
+  margin-top: 18px;
 }
 
 .panel-content-subjects {
