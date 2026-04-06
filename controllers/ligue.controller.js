@@ -61,6 +61,7 @@ export async function getSubjects(req, res, next) {
   try {
     const roomId = String(req.params?.roomId ?? '').trim();
     const classe = String(req.query?.classe ?? '').trim();
+    const weekKey = String(req.query?.weekKey ?? '').trim();
 
     if (!roomId) {
       return res.status(400).json({
