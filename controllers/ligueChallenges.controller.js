@@ -5,6 +5,7 @@
   toggleChallengeLike,
   upsertChallengeSubmission,
 } from '../models/ligueChallenges.model.js';
+import { getUserById } from '../models/users.model.js';
 
 function asString(value) {
   if (value === undefined || value === null) return '';
@@ -28,6 +29,21 @@ function currentWeekKey() {
 function sanitizeWeekKey(raw) {
   const weekKey = asString(raw);
   return /^\d{4}-\d{2}-\d{2}$/.test(weekKey) ? weekKey : currentWeekKey();
+}
+
+function buildAuthorName(user) {
+  const firstName = asString(user?.prenoms);
+  const lastName = asString(user?.nom);
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+  if (fullName) return fullName;
+
+  const email = asString(user?.email);
+  if (email) return email;
+
+  const phone = asString(user?.phone);
+  if (phone) return phone;
+
+  return 'Utilisateur';
 }
 
 function serializeComment(comment) {
@@ -112,7 +128,6 @@ export async function postChallengeComment(req, res, next) {
   try {
     const idChallenge = Number(req.params?.challengeId);
     const userId = asString(req.user?.idUser);
-    const authorName = asString(req.body?.authorName);
     const text = asString(req.body?.text);
     const verifiedBlue = asBool(req.body?.verifiedBlue);
 
@@ -123,13 +138,21 @@ export async function postChallengeComment(req, res, next) {
       });
     }
 
-    if (!userId || !authorName || !text) {
+    if (!userId || !text) {
       return res.status(400).json({
         ok: false,
         error: {
           code: 'BAD_REQUEST',
-          message: 'Champs requis: authorName, text.',
+          message: 'Champs requis: text.',
         },
+      });
+    }
+
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.status(404).json({
+        ok: false,
+        error: { code: 'USER_NOT_FOUND', message: 'Utilisateur introuvable.' },
       });
     }
 
@@ -144,7 +167,7 @@ export async function postChallengeComment(req, res, next) {
     const comment = await createChallengeComment({
       idChallenge,
       userId,
-      authorName,
+      authorName: buildAuthorName(user),
       verifiedBlue,
       text,
     });
