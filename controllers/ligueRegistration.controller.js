@@ -4,6 +4,7 @@ import {
   getLigueProfileByUserId,
   upsertLigueProfile,
 } from '../models/ligueProfiles.model.js';
+import { hasStartedLigueRunForUser } from '../models/ligueRuns.model.js';
 import {
   getUserById,
   getUserByIdentity,
@@ -30,6 +31,10 @@ function normalizeSalleKey(raw) {
   return root;
 }
 
+function normalizeSerieKey(raw) {
+  return asString(raw).trim().toUpperCase();
+}
+
 function splitClasseLigue(rawClasse) {
   const clean = asString(rawClasse).trim();
   if (!clean) {
@@ -53,6 +58,16 @@ function sanitizeHandle(raw) {
     .replace(/^@+/, '')
     .replace(/[^a-zA-Z0-9_.-]/g, '')
     .slice(0, 64);
+}
+
+function decorateLigueProfile(profile, { canChangeSalle = false, hasStartedRun = false } = {}) {
+  if (!profile) return null;
+  return {
+    ...profile,
+    can_change_salle: Boolean(canChangeSalle),
+    salle_locked: !canChangeSalle,
+    has_started_ligue_run: Boolean(hasStartedRun),
+  };
 }
 
 export async function registerToLigue(req, res, next) {
@@ -121,18 +136,30 @@ export async function registerToLigue(req, res, next) {
     });
 
     const existingProfile = await getLigueProfileByUserId(id_users);
-    if (
+    const hasStartedRun = await hasStartedLigueRunForUser(id_users);
+    const canChangeSalle = !hasStartedRun;
+    const existingSalleKey = normalizeSalleKey(existingProfile?.salle_key);
+    const existingSerieKey = normalizeSerieKey(existingProfile?.serie_key);
+    const requestedSerieKey = normalizeSerieKey(serie_key);
+    const isChangingLeagueRoom =
       existingProfile &&
-      normalizeSalleKey(existingProfile.salle_key) !== salle_key
-    ) {
+      (
+        existingSalleKey !== salle_key ||
+        existingSerieKey !== requestedSerieKey
+      );
+
+    if (isChangingLeagueRoom && !canChangeSalle) {
       return res.status(409).json({
         ok: false,
         error: {
           code: 'SALLE_LOCKED',
           message:
-            'La salle ligue est deja definie pour cet utilisateur et ne peut pas etre changee.',
+            'La salle ligue ne peut plus etre changee apres le premier quiz ligue commence.',
         },
-        ligueProfile: existingProfile,
+        ligueProfile: decorateLigueProfile(existingProfile, {
+          canChangeSalle,
+          hasStartedRun,
+        }),
       });
     }
 
@@ -146,8 +173,13 @@ export async function registerToLigue(req, res, next) {
     return res.status(existingProfile ? 200 : 201).json({
       ok: true,
       user,
-      ligueProfile,
+      ligueProfile: decorateLigueProfile(ligueProfile, {
+        canChangeSalle,
+        hasStartedRun,
+      }),
       restored: true,
+      can_change_salle: canChangeSalle,
+      has_started_ligue_run: hasStartedRun,
     });
   } catch (err) {
     if (err?.code === 'ER_DUP_ENTRY') {
@@ -183,10 +215,17 @@ export async function getLigueProfile(req, res, next) {
     }
 
     const ligueProfile = await getLigueProfileByUserId(userId);
+    const hasStartedRun = await hasStartedLigueRunForUser(userId);
+    const canChangeSalle = !hasStartedRun;
     return res.json({
       ok: true,
       registered: Boolean(ligueProfile),
-      ligueProfile,
+      ligueProfile: decorateLigueProfile(ligueProfile, {
+        canChangeSalle,
+        hasStartedRun,
+      }),
+      can_change_salle: canChangeSalle,
+      has_started_ligue_run: hasStartedRun,
     });
   } catch (err) {
     return next(err);

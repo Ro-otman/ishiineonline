@@ -19,6 +19,7 @@ export async function upsertLigueProfile(profile) {
       ) VALUES (?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         handle = VALUES(handle),
+        salle_key = VALUES(salle_key),
         serie_key = VALUES(serie_key),
         updated_at = CURRENT_TIMESTAMP
     `,

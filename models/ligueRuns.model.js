@@ -15,6 +15,23 @@ export async function getLigueRunById(id_run) {
   return rows[0] ?? null;
 }
 
+export async function hasStartedLigueRunForUser(id_user) {
+  const safeUserId = String(id_user ?? '').trim();
+  if (!safeUserId) return false;
+
+  const rows = await execute(
+    `
+      SELECT 1
+      FROM ligue_runs
+      WHERE id_user = ?
+      LIMIT 1
+    `,
+    [safeUserId],
+  );
+
+  return rows.length > 0;
+}
+
 export async function getLigueRunByUnique({ week_key, id_user, id_classe, id_serie, id_matiere }) {
   const rows = await execute(
     `
