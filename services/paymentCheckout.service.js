@@ -3,10 +3,12 @@ import {
   getPaymentByTransactionId,
   upsertPaymentRecord,
 } from '../models/payments.model.js';
+import { upsertWhiteExamAccess } from '../models/whiteExamAccess.model.js';
 import { activateUserSubscription, getUserById } from '../models/users.model.js';
 
 const DEFAULT_API_BASE_URL = 'https://api.fedapay.com/v1';
 const DEFAULT_PLAN = 'premium_monthly';
+const WHITE_EXAM_PLAN = 'white_exam_access';
 
 function asString(value) {
   if (value === undefined || value === null) return '';
@@ -65,17 +67,29 @@ function inferBaseUrl(req) {
 
 function resolvePlanConfig(plan) {
   const normalized = asString(plan) || DEFAULT_PLAN;
-  if (normalized !== DEFAULT_PLAN) {
-    throw buildError('Plan de paiement non supporte.', 400, 'UNSUPPORTED_PLAN');
+  if (normalized === DEFAULT_PLAN) {
+    return {
+      key: DEFAULT_PLAN,
+      amount: toInt(env.PAYMENT_PREMIUM_AMOUNT, 375),
+      currencyIso: asString(env.PAYMENT_CURRENCY_ISO || 'XOF') || 'XOF',
+      description:
+        asString(env.PAYMENT_PREMIUM_DESCRIPTION) || 'Abonnement mensuel',
+      durationDays: toInt(env.PAYMENT_DURATION_DAYS, 30),
+      activationKind: 'subscription',
+    };
   }
-  return {
-    key: DEFAULT_PLAN,
-    amount: toInt(env.PAYMENT_PREMIUM_AMOUNT, 375),
-    currencyIso: asString(env.PAYMENT_CURRENCY_ISO || 'XOF') || 'XOF',
-    description:
-      asString(env.PAYMENT_PREMIUM_DESCRIPTION) || 'Abonnement mensuel',
-    durationDays: toInt(env.PAYMENT_DURATION_DAYS, 30),
-  };
+  if (normalized === WHITE_EXAM_PLAN) {
+    return {
+      key: WHITE_EXAM_PLAN,
+      amount: toInt(env.PAYMENT_WHITE_EXAM_AMOUNT, 250),
+      currencyIso: asString(env.PAYMENT_CURRENCY_ISO || 'XOF') || 'XOF',
+      description:
+        asString(env.PAYMENT_WHITE_EXAM_DESCRIPTION) || 'Acces examen blanc',
+      durationDays: 0,
+      activationKind: 'white_exam_access',
+    };
+  }
+  throw buildError('Plan de paiement non supporte.', 400, 'UNSUPPORTED_PLAN');
 }
 
 function sanitizeCustomer(customer = {}) {
@@ -102,6 +116,31 @@ function sanitizeCustomer(customer = {}) {
       number: phoneNumber,
       country: country || 'bj',
     },
+  };
+}
+
+function sanitizePlanContext(planConfig, context = {}) {
+  const safeContext = asObject(context);
+  if (planConfig.activationKind !== 'white_exam_access') {
+    return {};
+  }
+
+  const classe = asString(
+    safeContext.classe || safeContext.classe_name || safeContext.className,
+  );
+  const weekKey = asString(safeContext.weekKey || safeContext.week_key);
+
+  if (!classe || !/^\d{4}-\d{2}-\d{2}$/.test(weekKey)) {
+    throw buildError(
+      "Classe et weekKey sont requis pour payer l'examen blanc.",
+      400,
+      'WHITE_EXAM_CONTEXT_REQUIRED',
+    );
+  }
+
+  return {
+    classe,
+    week_key: weekKey,
   };
 }
 
@@ -268,6 +307,26 @@ function extractPlanKey(payload, fallback = '') {
   ]);
 }
 
+function extractWhiteExamContext(payload, fallback = {}) {
+  const metadata = extractMetadata(payload);
+  return {
+    classe: pickFirstText([
+      metadata?.white_exam_classe,
+      metadata?.classe,
+      payload?.classe,
+      fallback.classe,
+      fallback.classe_name,
+    ]),
+    weekKey: pickFirstText([
+      metadata?.white_exam_week_key,
+      metadata?.week_key,
+      payload?.week_key,
+      fallback.weekKey,
+      fallback.week_key,
+    ]),
+  };
+}
+
 function extractAmount(payload, fallback = 0) {
   const tx = extractTransactionEnvelope(payload) || {};
   const candidates = [
@@ -409,6 +468,74 @@ async function markSubscriptionApproved(userId, durationDays) {
   return { updated: true, user: updatedUser };
 }
 
+async function markWhiteExamAccessApproved({
+  userId,
+  payment,
+  payload,
+  fallbackContext = {},
+}) {
+  const context = extractWhiteExamContext(payload, fallbackContext);
+  if (!context.classe || !context.weekKey) {
+    return { updated: false, access: null };
+  }
+
+  const access = await upsertWhiteExamAccess({
+    transactionId: payment?.transaction_id || extractTransactionId(payload),
+    userId,
+    weekKey: context.weekKey,
+    classeName: context.classe,
+    planKey: payment?.plan_key || WHITE_EXAM_PLAN,
+    status: payment?.status || extractStatus(payload) || 'approved',
+    amount:
+      payment?.amount ||
+      extractAmount(payload, resolvePlanConfig(WHITE_EXAM_PLAN).amount),
+    currencyIso:
+      payment?.currency_iso ||
+      extractCurrencyIso(payload, env.PAYMENT_CURRENCY_ISO || 'XOF'),
+    approvedAt:
+      payment?.approved_at ||
+      extractProviderDate(payload, 'approved_at', 'approvedAt') ||
+      new Date().toISOString(),
+  });
+
+  return { updated: Boolean(access), access };
+}
+
+async function applyApprovedPaymentActivation({
+  userId,
+  payment,
+  payload,
+  fallbackContext = {},
+}) {
+  const planConfig = resolvePlanConfig(payment?.plan_key || DEFAULT_PLAN);
+  if (planConfig.activationKind === 'subscription') {
+    const activation = await markSubscriptionApproved(userId, planConfig.durationDays);
+    return {
+      updated: activation.updated,
+      activationKind: planConfig.activationKind,
+      planKey: planConfig.key,
+    };
+  }
+  if (planConfig.activationKind === 'white_exam_access') {
+    const access = await markWhiteExamAccessApproved({
+      userId,
+      payment,
+      payload,
+      fallbackContext,
+    });
+    return {
+      updated: access.updated,
+      activationKind: planConfig.activationKind,
+      planKey: planConfig.key,
+    };
+  }
+  return {
+    updated: false,
+    activationKind: planConfig.activationKind,
+    planKey: planConfig.key,
+  };
+}
+
 async function persistTransactionSnapshot({
   payload,
   transactionId,
@@ -466,7 +593,13 @@ async function persistTransactionSnapshot({
   });
 }
 
-export async function createPaymentCheckout({ req, userId, plan, customer }) {
+export async function createPaymentCheckout({
+  req,
+  userId,
+  plan,
+  customer,
+  context,
+}) {
   const safeUserId = asString(userId);
   if (!safeUserId) {
     throw buildError('userId requis.', 400, 'USER_ID_REQUIRED');
@@ -474,6 +607,7 @@ export async function createPaymentCheckout({ req, userId, plan, customer }) {
 
   const planConfig = resolvePlanConfig(plan);
   const safeCustomer = sanitizeCustomer(customer);
+  const safeContext = sanitizePlanContext(planConfig, context);
   const callbackUrl = buildCallbackUrl(req, {
     userId: safeUserId,
     planKey: planConfig.key,
@@ -488,6 +622,10 @@ export async function createPaymentCheckout({ req, userId, plan, customer }) {
     metadata: {
       user_id: safeUserId,
       plan: planConfig.key,
+      ...(safeContext.classe ? { white_exam_classe: safeContext.classe } : {}),
+      ...(safeContext.week_key
+        ? { white_exam_week_key: safeContext.week_key }
+        : {}),
     },
   };
 
@@ -581,23 +719,41 @@ export async function verifyPaymentCheckout({
   const approved = isSuccessfulStatus(status);
   const effectiveUserId = asString(payment?.user_id || safeUserId || existing?.user_id);
   let subscriptionUpdated = false;
+  let activationApplied = false;
+  let accessGranted = false;
+  const planKey = payment?.plan_key || existing?.plan_key || DEFAULT_PLAN;
 
   if (approved && effectiveUserId) {
-    const planConfig = resolvePlanConfig(payment?.plan_key || DEFAULT_PLAN);
-    const activation = await markSubscriptionApproved(effectiveUserId, planConfig.durationDays);
-    subscriptionUpdated = activation.updated;
+    const activation = await applyApprovedPaymentActivation({
+      userId: effectiveUserId,
+      payment: {
+        ...payment,
+        plan_key: planKey,
+      },
+      payload: response,
+    });
+    activationApplied = activation.updated;
+    subscriptionUpdated =
+      activation.activationKind === 'subscription' && activation.updated;
+    accessGranted =
+      activation.activationKind === 'white_exam_access' && activation.updated;
   }
 
   return {
     approved,
     transactionId: effectiveTransactionId,
+    plan: planKey,
     status: status || callbackStatus || null,
     message: approved
-      ? subscriptionUpdated
+      ? accessGranted
+        ? "Paiement confirme et acces examen blanc active."
+        : subscriptionUpdated
         ? 'Paiement confirme et abonnement active.'
-        : 'Paiement confirme. Utilisateur non trouve cote backend, abonnement non mis a jour ici.'
+        : 'Paiement confirme.'
       : 'Paiement non approuve par FedaPay.',
     subscriptionUpdated,
+    activationApplied,
+    accessGranted,
   };
 }
 
@@ -610,6 +766,8 @@ export async function handlePaymentWebhook(body = {}) {
       transactionId: null,
       status: initialStatus || null,
       subscriptionUpdated: false,
+      activationApplied: false,
+      accessGranted: false,
     };
   }
 
@@ -642,16 +800,26 @@ export async function handlePaymentWebhook(body = {}) {
       transactionId,
       status: status || null,
       subscriptionUpdated: false,
+      activationApplied: false,
+      accessGranted: false,
     };
   }
 
-  const planConfig = resolvePlanConfig(payment?.plan_key || DEFAULT_PLAN);
-  const activation = await markSubscriptionApproved(effectiveUserId, planConfig.durationDays);
+  const activation = await applyApprovedPaymentActivation({
+    userId: effectiveUserId,
+    payment,
+    payload,
+  });
 
   return {
     accepted: true,
     transactionId,
     status,
-    subscriptionUpdated: activation.updated,
+    plan: payment?.plan_key || DEFAULT_PLAN,
+    subscriptionUpdated:
+      activation.activationKind === 'subscription' && activation.updated,
+    activationApplied: activation.updated,
+    accessGranted:
+      activation.activationKind === 'white_exam_access' && activation.updated,
   };
 }

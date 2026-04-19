@@ -61,7 +61,7 @@ router.post('/duels/:code/run', requireUserAuth, startDuelRun);
 router.post('/rooms/:roomId/subjects/:subjectId/run', requireUserAuth, startSubjectRun);
 router.post('/runs/:runId/submit', requireUserAuth, submitRun);
 router.get('/rooms/:roomId/leaderboard', leaderboard);
-router.get('/white-exam/subjects', listWhiteExamSubjects);
+router.get('/white-exam/subjects', requireUserAuth, listWhiteExamSubjects);
 router.post('/white-exam/subjects/:subjectId/run', requireUserAuth, startWhiteExamRun);
 router.post('/white-exam/runs/:runId/submit', requireUserAuth, submitWhiteExamRun);
 

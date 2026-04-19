@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 
+import { env } from '../config/env.js';
 import { getUserById } from '../models/users.model.js';
 import { pickBalancedCandidates } from '../models/ligueWeeklyQuizBank.model.js';
 import { listMatieresForClasseAndType } from '../models/matieres.model.js';
@@ -16,6 +17,7 @@ import {
   insertWhiteExamRunQuestions,
   listWhiteExamRunQuestions,
 } from '../models/whiteExamRuns.model.js';
+import { getWhiteExamAccessStatus } from '../models/whiteExamAccess.model.js';
 import {
   resolveWhiteExamContext,
   WHITE_EXAM_QUESTIONS_PER_SUBJECT,
@@ -59,6 +61,31 @@ function buildQuestionPayload(questions, timersByQuizId) {
   }));
 }
 
+function whiteExamPaymentConfig() {
+  const parsedAmount = Number.parseInt(asString(env.PAYMENT_WHITE_EXAM_AMOUNT), 10);
+  return {
+    planKey: 'white_exam_access',
+    amount: Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : 250,
+    currencyIso: asString(env.PAYMENT_CURRENCY_ISO || 'XOF') || 'XOF',
+  };
+}
+
+function serializeWhiteExamPayment(access) {
+  const config = whiteExamPaymentConfig();
+  return {
+    required: true,
+    plan_key: config.planKey,
+    amount: config.amount,
+    currency_iso: config.currencyIso,
+    approved: Boolean(access),
+    transaction_id: access?.transaction_id || null,
+    approved_at: access?.approved_at
+      ? new Date(access.approved_at).toISOString()
+      : null,
+    status: access?.status || (access ? 'approved' : 'pending'),
+  };
+}
+
 async function resolveSubject({ id_classe, id_type, subjectId }) {
   const subjects = await listMatieresForClasseAndType({
     id_classe,
@@ -72,6 +99,17 @@ async function resolveSubject({ id_classe, id_type, subjectId }) {
 
 export async function listWhiteExamSubjects(req, res, next) {
   try {
+    const userId = asString(req.user?.idUser).trim();
+    if (!userId) {
+      return res.status(401).json({
+        ok: false,
+        error: {
+          code: 'USER_AUTH_REQUIRED',
+          message: 'Connexion utilisateur requise.',
+        },
+      });
+    }
+
     const classe = asString(req.query?.classe).trim();
     if (!classe) {
       return res.status(400).json({
@@ -88,6 +126,11 @@ export async function listWhiteExamSubjects(req, res, next) {
     const weekKey = requestedWeekKey || weekKeyFromDateUtc(now) || '';
     const { classRow, serieKey, typeRow } = await resolveWhiteExamContext({
       classe,
+    });
+    const access = await getWhiteExamAccessStatus({
+      userId,
+      weekKey,
+      classe: classRow.nom_classe,
     });
 
     const subjects = await listMatieresForClasseAndType({
@@ -141,6 +184,7 @@ export async function listWhiteExamSubjects(req, res, next) {
       classe: classRow.nom_classe,
       serieKey,
       questionTarget: WHITE_EXAM_QUESTIONS_PER_SUBJECT,
+      payment: serializeWhiteExamPayment(access),
       subjects: subjectPlans,
     });
   } catch (err) {
@@ -178,6 +222,21 @@ export async function startWhiteExamRun(req, res, next) {
     const { classRow, serieKey, typeRow } = await resolveWhiteExamContext({
       classe,
     });
+    const access = await getWhiteExamAccessStatus({
+      userId,
+      weekKey,
+      classe: classRow.nom_classe,
+    });
+    if (!access) {
+      return res.status(402).json({
+        ok: false,
+        error: {
+          code: 'WHITE_EXAM_PAYMENT_REQUIRED',
+          message:
+            "Paiement requis: règle 250 F pour débloquer l'examen blanc de cette semaine.",
+        },
+      });
+    }
     const { subject } = await resolveSubject({
       id_classe: classRow.id_classe,
       id_type: typeRow?.id_type ?? null,

@@ -15,6 +15,7 @@ export async function initPaymentCheckout(req, res, next) {
       userId: req.user?.idUser,
       plan: body.plan,
       customer: asObject(body.customer),
+      context: asObject(body.context),
     });
 
     res.status(201).json({
@@ -44,8 +45,11 @@ export async function verifyPaymentCheckout(req, res, next) {
       approved: result.approved,
       verified: result.approved,
       transaction_id: result.transactionId,
+      plan: result.plan,
       status: result.status,
       subscriptionUpdated: result.subscriptionUpdated,
+      activationApplied: result.activationApplied,
+      accessGranted: result.accessGranted,
       message: result.message,
     });
   } catch (err) {
