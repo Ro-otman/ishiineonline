@@ -7,6 +7,7 @@ import {
   getFriendDuelByCode,
   getFriendDuelRunContextById,
   insertFriendDuelRunAnswers,
+  listLatestFriendDuelParticipants,
   listFriendDuelHistoryForUser,
 } from '../models/friendDuels.model.js';
 import {
@@ -78,6 +79,178 @@ function serializeDuel(duel, { createdByMe = false, savedAt = null } = {}) {
     created_at: duel.created_at ? new Date(duel.created_at).toISOString() : null,
     created_by_me: Boolean(createdByMe),
     saved_at: savedAt ? new Date(savedAt).toISOString() : null,
+  };
+}
+
+function buildParticipantFullName(participant) {
+  const firstName = asString(participant?.prenoms);
+  const lastName = asString(participant?.nom);
+  return [firstName, lastName].filter(Boolean).join(' ').trim();
+}
+
+function participantSortScore(a, b) {
+  const aSubmitted = Boolean(a?.has_submitted);
+  const bSubmitted = Boolean(b?.has_submitted);
+  if (aSubmitted !== bSubmitted) return aSubmitted ? -1 : 1;
+
+  const correctDiff = Number(b?.correct_count ?? 0) - Number(a?.correct_count ?? 0);
+  if (correctDiff !== 0) return correctDiff;
+
+  const percentDiff = Number(b?.score_percent ?? 0) - Number(a?.score_percent ?? 0);
+  if (Math.abs(percentDiff) > 0.001) return percentDiff > 0 ? 1 : -1;
+
+  const aTime = Number(a?.total_response_time_ms ?? 0);
+  const bTime = Number(b?.total_response_time_ms ?? 0);
+  if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
+
+  const aSubmittedAt = a?.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+  const bSubmittedAt = b?.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+  return aSubmittedAt - bSubmittedAt;
+}
+
+function determineWinnerUserId(participants) {
+  const submitted = (Array.isArray(participants) ? participants : []).filter(
+    (item) => item?.has_submitted,
+  );
+  if (submitted.length < 2) return null;
+
+  const ranked = [...submitted].sort(participantSortScore);
+  const first = ranked[0];
+  const second = ranked[1];
+  if (!first) return null;
+  if (!second) return asString(first.id_user) || null;
+
+  const sameScore =
+    Number(first.correct_count ?? 0) === Number(second.correct_count ?? 0) &&
+    Math.abs(Number(first.score_percent ?? 0) - Number(second.score_percent ?? 0)) <= 0.001;
+  const firstTime = Number(first.total_response_time_ms ?? 0);
+  const secondTime = Number(second.total_response_time_ms ?? 0);
+  const sameTime =
+    (firstTime <= 0 && secondTime <= 0) ||
+    (firstTime > 0 && secondTime > 0 && firstTime === secondTime);
+  if (sameScore && sameTime) return null;
+
+  return asString(first.id_user) || null;
+}
+
+function resolveDuelStatus({ participants, participantCount, submittedCount }) {
+  if (submittedCount >= 2) return 'finished';
+  if (submittedCount >= 1) return 'waiting_opponent';
+  if ((participants?.length ?? 0) > 0) return 'in_progress';
+  if (participantCount > 0) return 'open';
+  return 'open';
+}
+
+async function buildDuelResultPayload(duel, currentUserId) {
+  const rawParticipants = await listLatestFriendDuelParticipants(duel.id_duel);
+  const creatorId = asString(duel.id_user_creator);
+  const currentUser = asString(currentUserId);
+
+  const participants = rawParticipants.map((participant) => ({
+    ...participant,
+    full_name: buildParticipantFullName(participant),
+    has_submitted: Boolean(participant?.submitted_at),
+  }));
+
+  if (
+    creatorId &&
+    creatorId !== currentUser &&
+    !participants.some((item) => asString(item.id_user) === creatorId)
+  ) {
+    const creator = await getUserById(creatorId);
+    participants.push({
+      id_run: '',
+      id_duel: duel.id_duel,
+      id_user: creatorId,
+      nom: asString(creator?.nom),
+      prenoms: asString(creator?.prenoms),
+      img_path: asString(creator?.img_path) || null,
+      total_questions: 0,
+      correct_count: 0,
+      total_response_time_ms: 0,
+      score_percent: 0,
+      started_at: null,
+      submitted_at: null,
+      updated_at: null,
+      full_name: buildParticipantFullName(creator),
+      has_submitted: false,
+    });
+  }
+
+  const submittedCount = participants.filter((item) => item.has_submitted).length;
+  const participantCount = Math.max(2, participants.length);
+  const winnerUserId = determineWinnerUserId(participants);
+
+  const orderedParticipants = [...participants].sort((a, b) => {
+    const aIsMe = asString(a.id_user) === currentUser;
+    const bIsMe = asString(b.id_user) === currentUser;
+    if (aIsMe !== bIsMe) return aIsMe ? -1 : 1;
+    return participantSortScore(a, b);
+  });
+
+  const updatedAt = orderedParticipants
+    .map((item) => item.updated_at || item.submitted_at || item.started_at)
+    .filter(Boolean)
+    .map((value) => new Date(value))
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+
+  return {
+    ok: true,
+    duel: serializeDuel(duel, {
+      createdByMe: creatorId === currentUser,
+      savedAt: updatedAt || duel.updated_at || duel.created_at,
+    }),
+    status: resolveDuelStatus({
+      participants: orderedParticipants,
+      participantCount,
+      submittedCount,
+    }),
+    participant_count: participantCount,
+    participantCount,
+    participants_count: participantCount,
+    participantsCount: participantCount,
+    submitted_count: submittedCount,
+    submittedCount,
+    winner_user_id: winnerUserId,
+    winnerUserId,
+    updated_at: updatedAt ? updatedAt.toISOString() : null,
+    updatedAt: updatedAt ? updatedAt.toISOString() : null,
+    participants: orderedParticipants.map((participant) => ({
+      id_user: asString(participant.id_user),
+      prenoms: asString(participant.prenoms),
+      nom: asString(participant.nom),
+      full_name: asString(participant.full_name),
+      img_path: participant.img_path || null,
+      has_submitted: Boolean(participant.has_submitted),
+      submitted_at: participant.submitted_at
+        ? new Date(participant.submitted_at).toISOString()
+        : null,
+      total_questions: Number(participant.total_questions ?? 0),
+      correct_count: Number(participant.correct_count ?? 0),
+      score_percent: Number(participant.score_percent ?? 0),
+      total_response_time_ms: Number(participant.total_response_time_ms ?? 0),
+      is_winner:
+        Boolean(winnerUserId) && asString(participant.id_user) === winnerUserId,
+      is_me: asString(participant.id_user) === currentUser,
+    })),
+    results: orderedParticipants.map((participant) => ({
+      id_user: asString(participant.id_user),
+      prenoms: asString(participant.prenoms),
+      nom: asString(participant.nom),
+      full_name: asString(participant.full_name),
+      img_path: participant.img_path || null,
+      has_submitted: Boolean(participant.has_submitted),
+      submitted_at: participant.submitted_at
+        ? new Date(participant.submitted_at).toISOString()
+        : null,
+      total_questions: Number(participant.total_questions ?? 0),
+      correct_count: Number(participant.correct_count ?? 0),
+      score_percent: Number(participant.score_percent ?? 0),
+      total_response_time_ms: Number(participant.total_response_time_ms ?? 0),
+      is_winner:
+        Boolean(winnerUserId) && asString(participant.id_user) === winnerUserId,
+      is_me: asString(participant.id_user) === currentUser,
+    })),
   };
 }
 
@@ -247,6 +420,37 @@ export async function listMyDuels(req, res, next) {
           savedAt: entry.saved_at,
         })),
     });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getDuelResult(req, res, next) {
+  try {
+    const userId = asString(req.user?.idUser);
+    const code = asString(req.params?.code);
+    if (!userId || !code) {
+      return res.status(400).json({
+        ok: false,
+        error: {
+          code: 'BAD_REQUEST',
+          message: 'Code duel invalide.',
+        },
+      });
+    }
+
+    const duel = await getFriendDuelByCode(code);
+    if (!duel) {
+      return res.status(404).json({
+        ok: false,
+        error: {
+          code: 'DUEL_NOT_FOUND',
+          message: 'Code duel introuvable.',
+        },
+      });
+    }
+
+    return res.json(await buildDuelResultPayload(duel, userId));
   } catch (error) {
     return next(error);
   }

@@ -28,6 +28,7 @@ import {
 import {
   createDuelInvite,
   getDuelInvite,
+  getDuelResult,
   listMyDuels,
   startDuelRun,
   submitDuelRun,
@@ -53,6 +54,7 @@ router.post('/challenges/:challengeId/submission', requireUserAuth, saveChalleng
 router.get('/duels/history', requireUserAuth, listMyDuels);
 router.post('/duels', requireUserAuth, createDuelInvite);
 router.post('/duels/runs/:runId/submit', requireUserAuth, submitDuelRun);
+router.get('/duels/:code/result', requireUserAuth, getDuelResult);
 router.get('/duels/:code', requireUserAuth, getDuelInvite);
 router.post('/duels/:code/run', requireUserAuth, startDuelRun);
 

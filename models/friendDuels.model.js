@@ -52,6 +52,7 @@ function hydrateDuel(row) {
     mode: asString(row.mode) || 'exam',
     quiz_ids: parseQuizIds(row.quiz_ids_json),
     created_at: row.created_at,
+    updated_at: row.updated_at,
     expires_at: row.expires_at,
   };
 }
@@ -62,6 +63,25 @@ function hydrateRun(row) {
     id_run: asString(row.id_run),
     id_duel: asString(row.id_duel),
     id_user: asString(row.id_user),
+    total_questions: asInt(row.total_questions),
+    correct_count: asInt(row.correct_count),
+    total_response_time_ms: asInt(row.total_response_time_ms),
+    score_percent: Number(row.score_percent ?? 0) || 0,
+    started_at: row.started_at,
+    submitted_at: row.submitted_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function hydrateResultParticipant(row) {
+  if (!row) return null;
+  return {
+    id_run: asString(row.id_run),
+    id_duel: asString(row.id_duel),
+    id_user: asString(row.id_user),
+    nom: asString(row.nom),
+    prenoms: asString(row.prenoms),
+    img_path: asString(row.img_path) || null,
     total_questions: asInt(row.total_questions),
     correct_count: asInt(row.correct_count),
     total_response_time_ms: asInt(row.total_response_time_ms),
@@ -427,4 +447,59 @@ export async function listFriendDuelHistoryForUser(id_user, limit = 10) {
     created_by_me: asString(row.id_user_creator) === safeUserId,
     saved_at: row.last_played_at ?? row.created_at,
   }));
+}
+
+export async function listLatestFriendDuelParticipants(id_duel) {
+  await ensureFriendDuelTables();
+  const safeDuelId = asString(id_duel);
+  if (!safeDuelId) return [];
+
+  const rows = await execute(
+    `
+      SELECT
+        r.id_run,
+        r.id_duel,
+        r.id_user,
+        r.total_questions,
+        r.correct_count,
+        r.total_response_time_ms,
+        r.score_percent,
+        r.started_at,
+        r.submitted_at,
+        r.updated_at,
+        u.nom,
+        u.prenoms,
+        u.img_path
+      FROM friend_duel_runs r
+      LEFT JOIN users u ON u.id_users = r.id_user
+      WHERE r.id_duel = ?
+        AND r.id_run = (
+          SELECT rr.id_run
+          FROM friend_duel_runs rr
+          WHERE rr.id_duel = r.id_duel
+            AND rr.id_user = r.id_user
+          ORDER BY
+            CASE WHEN rr.submitted_at IS NULL THEN 1 ELSE 0 END ASC,
+            COALESCE(rr.submitted_at, rr.started_at) DESC,
+            rr.started_at DESC,
+            rr.updated_at DESC,
+            rr.id_run DESC
+          LIMIT 1
+        )
+      ORDER BY
+        CASE WHEN r.submitted_at IS NULL THEN 1 ELSE 0 END ASC,
+        r.correct_count DESC,
+        r.score_percent DESC,
+        CASE
+          WHEN r.total_response_time_ms IS NULL OR r.total_response_time_ms <= 0 THEN 2147483647
+          ELSE r.total_response_time_ms
+        END ASC,
+        r.started_at DESC
+    `,
+    [safeDuelId],
+  );
+
+  return rows
+    .map((row) => hydrateResultParticipant(row))
+    .filter((row) => row && row.id_user);
 }
