@@ -70,8 +70,26 @@ function whiteExamPaymentConfig() {
   };
 }
 
+function isWhiteExamPaymentDisabled() {
+  return Boolean(env.WHITE_EXAM_PAYMENT_DISABLED);
+}
+
 function serializeWhiteExamPayment(access) {
   const config = whiteExamPaymentConfig();
+  if (isWhiteExamPaymentDisabled()) {
+    return {
+      required: false,
+      plan_key: config.planKey,
+      amount: config.amount,
+      currency_iso: config.currencyIso,
+      approved: true,
+      transaction_id: access?.transaction_id || null,
+      approved_at: access?.approved_at
+        ? new Date(access.approved_at).toISOString()
+        : null,
+      status: access?.status || 'bypass_disabled',
+    };
+  }
   return {
     required: true,
     plan_key: config.planKey,
@@ -227,7 +245,7 @@ export async function startWhiteExamRun(req, res, next) {
       weekKey,
       classe: classRow.nom_classe,
     });
-    if (!access) {
+    if (!access && !isWhiteExamPaymentDisabled()) {
       return res.status(402).json({
         ok: false,
         error: {

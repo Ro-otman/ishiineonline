@@ -79,6 +79,12 @@ export const env = {
   FIREBASE_SERVICE_ACCOUNT_BASE64: process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || '',
   FIREBASE_SERVICE_ACCOUNT_PATH: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
 
+  // White exam
+  WHITE_EXAM_PAYMENT_DISABLED: toBool(
+    process.env.WHITE_EXAM_PAYMENT_DISABLED,
+    false,
+  ),
+
   // Notification jobs
   NOTIFICATION_JOBS_ENABLED: toBool(
     process.env.NOTIFICATION_JOBS_ENABLED,
