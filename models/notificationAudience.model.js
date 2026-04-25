@@ -90,6 +90,44 @@ export async function listUsersWithSubscriptionDates() {
   );
 }
 
+export async function listUsersDueForReviewReminders({ dueBefore = new Date().toISOString() } = {}) {
+  const safeDueBefore = asString(dueBefore) || new Date().toISOString();
+
+  return execute(
+    `
+      SELECT
+        u.id_users,
+        u.nom,
+        u.prenoms,
+        u.email,
+        u.phone,
+        u.classe,
+        u.is_subscribed,
+        u.subscription_expiry,
+        COUNT(DISTINCT ri.id_review) AS due_reviews,
+        MIN(ri.next_review_at) AS next_review_at
+      FROM users u
+      JOIN review_items ri
+        ON ri.id_user = u.id_users
+       AND ri.next_review_at <= ?
+      JOIN device_push_tokens dpt
+        ON dpt.id_user = u.id_users
+       AND dpt.is_active = 1
+      GROUP BY
+        u.id_users,
+        u.nom,
+        u.prenoms,
+        u.email,
+        u.phone,
+        u.classe,
+        u.is_subscribed,
+        u.subscription_expiry
+      ORDER BY due_reviews DESC, next_review_at ASC, u.id_users ASC
+    `,
+    [safeDueBefore],
+  );
+}
+
 export async function listUsersForCampaign({ audience = 'all' } = {}) {
   const safeAudience = asString(audience).toLowerCase() || 'all';
 

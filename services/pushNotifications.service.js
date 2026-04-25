@@ -77,6 +77,8 @@ function buildFirebaseMessage({ token, notification }) {
     android: {
       priority: 'high',
       notification: {
+        icon: 'ic_notification_monogram',
+        color: '#FFC542',
         sound: 'default',
       },
     },

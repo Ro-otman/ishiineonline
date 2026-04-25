@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 
 import { env } from '../config/env.js';
-import { listLigueRecipientsForSetting, listUsersForCampaign, listUsersWithSubscriptionDates } from '../models/notificationAudience.model.js';
+import { listLigueRecipientsForSetting, listUsersDueForReviewReminders, listUsersForCampaign, listUsersWithSubscriptionDates } from '../models/notificationAudience.model.js';
 import { listLatestLigueSettingsForAutomation } from '../models/ligueSettings.model.js';
+import { ensurePushTokensTable } from '../models/devicePushTokens.model.js';
 import {
   notifyAnnouncement,
   notifyLigueStart,
@@ -49,6 +50,28 @@ function campaignKind(value) {
   return normalized === 'review_campaign' ? 'review_campaign' : 'announcement';
 }
 
+function reviewReminderBucketKey(now = new Date()) {
+  const intervalHours = Math.max(1, env.REVIEW_REMINDER_INTERVAL_HOURS);
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  const bucketStart = new Date(Math.floor(now.getTime() / intervalMs) * intervalMs);
+  return bucketStart.toISOString().slice(0, 13);
+}
+
+function buildReviewReminderCopy(user = {}) {
+  const dueReviews = Math.max(1, Number(user?.due_reviews) || 0);
+  if (dueReviews <= 1) {
+    return {
+      title: 'iShiine ✓ Révision en attente',
+      message: "Tu as 1 révision à reprendre. Ouvre iShiine dès que tu es connecté et garde le rythme.",
+    };
+  }
+
+  return {
+    title: 'iShiine ✓ Révisions en attente',
+    message: `Tu as ${dueReviews} révisions à reprendre. Ouvre iShiine dès que tu es connecté et garde le rythme.`,
+  };
+}
+
 async function dispatchLeagueStartNotifications(now = new Date()) {
   const settingsRows = await listLatestLigueSettingsForAutomation();
   const windowMs = Math.max(15, env.NOTIFICATION_JOBS_INTERVAL_SECONDS) * 1000;
@@ -83,6 +106,45 @@ async function dispatchLeagueStartNotifications(now = new Date()) {
   }
 
   return { sentCount };
+}
+
+async function dispatchReviewReminders(now = new Date()) {
+  await ensurePushTokensTable();
+
+  if (!env.REVIEW_REMINDER_ENABLED) {
+    return { sentCount: 0, skipped: true, reason: 'disabled' };
+  }
+
+  const minDueReviews = Math.max(1, env.REVIEW_REMINDER_MIN_DUE);
+  const rows = uniqueByUserId(
+    await listUsersDueForReviewReminders({ dueBefore: now.toISOString() }),
+  ).filter((user) => (Number(user?.due_reviews) || 0) >= minDueReviews);
+
+  const campaignKey = `review-reminder:${reviewReminderBucketKey(now)}`;
+  let sentCount = 0;
+
+  await runInBatches(rows, async (user) => {
+    const copy = buildReviewReminderCopy(user);
+    const notification = await notifyReviewCampaign({
+      userId: user.id_users,
+      title: copy.title,
+      message: copy.message,
+      campaignKey,
+      payload: {
+        automated: true,
+        source: 'review_reminder',
+        dueReviews: Number(user?.due_reviews) || 0,
+        nextReviewAt: asString(user?.next_review_at),
+      },
+    });
+    if (notification) sentCount += 1;
+  });
+
+  return {
+    recipientCount: rows.length,
+    sentCount,
+    campaignKey,
+  };
 }
 
 async function dispatchSubscriptionLifecycleNotifications(now = new Date()) {
@@ -186,14 +248,16 @@ export async function runNotificationAutomationCycle({ now = new Date() } = {}) 
 
   cycleRunning = true;
   try {
-    const [leagueStart, subscriptions] = await Promise.all([
+    const [leagueStart, reviewReminders, subscriptions] = await Promise.all([
       dispatchLeagueStartNotifications(now),
+      dispatchReviewReminders(now),
       dispatchSubscriptionLifecycleNotifications(now),
     ]);
 
     return {
       ok: true,
       leagueStart,
+      reviewReminders,
       subscriptions,
     };
   } finally {

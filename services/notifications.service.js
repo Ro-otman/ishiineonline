@@ -131,7 +131,7 @@ export async function notifyPaymentSuccess({
   const amountLabel = Number.isFinite(Number(amount)) ? formatNumberFr(amount) : null;
   const messageParts = [];
   if (amountLabel) {
-    messageParts.push(`Paiement confirme : ${amountLabel} ${asString(currencyIso) || 'F CFA'}.`);
+    messageParts.push(`Paiement confirmé : ${amountLabel} ${asString(currencyIso) || 'F CFA'}.`);
   }
   messageParts.push(
     expiryLabel
@@ -142,7 +142,7 @@ export async function notifyPaymentSuccess({
   return pushNotification({
     userId: safeUserId,
     category: 'success',
-    title: 'Abonnement active',
+    title: 'Abonnement activé',
     message: messageParts.join(' '),
     dedupeKey: `payment-success:${safeTransactionId}`,
     payload: {
@@ -173,7 +173,7 @@ export async function notifyLigueStart({
   return pushNotification({
     userId: safeUserId,
     category: 'info',
-    title: 'Debut de ligue',
+    title: 'Début de ligue',
     message: startLabel
       ? `La ligue ${classLabel} commence maintenant. Bonne chance pour cette session du ${startLabel}.`
       : `La ligue ${classLabel} commence maintenant. Bonne chance.`,
@@ -208,8 +208,10 @@ export async function notifyLigueResult({
   return pushNotification({
     userId: safeUserId,
     category: roundedScore >= 50 ? 'success' : 'warning',
-    title: `Resultat ${asString(subjectName) || 'ligue'}`,
-    message: `${asString(subjectName) || 'Ta matiere'} est terminee : ${roundedScore}% (${safeCorrectCount}/${safeTotalQuestions}).`,
+    title: `iShiine ✓ Résultats ${asString(subjectName) || 'ligue'}`,
+    message: asString(subjectName)
+      ? `Résultats disponibles en ${asString(subjectName)} : ${roundedScore}% (${safeCorrectCount}/${safeTotalQuestions}).`
+      : `Tes résultats sont disponibles : ${roundedScore}% (${safeCorrectCount}/${safeTotalQuestions}).`,
     dedupeKey: `league-result:${safeRunId}`,
     payload: {
       kind: 'league_result',
@@ -238,8 +240,8 @@ export async function notifySubscriptionExpiring({
   return pushNotification({
     userId: safeUserId,
     category: 'warning',
-    title: 'Abonnement bientot expire',
-    message: `Ton abonnement premium expire bientot${expiryLabel ? `, le ${expiryLabel}` : ''}. Pense a le renouveler dans les ${roundedHours} prochaines heures.`,
+    title: 'Abonnement bientôt expiré',
+    message: `Ton abonnement premium expire bientot${expiryLabel ? `, le ${expiryLabel}` : ''}. Pense à le renouveler dans les ${roundedHours} prochaines heures.`,
     dedupeKey: `subscription-expiring:${expiryIso.slice(0, 10)}`,
     payload: {
       kind: 'subscription_expiring',
@@ -262,10 +264,10 @@ export async function notifySubscriptionExpired({
   return pushNotification({
     userId: safeUserId,
     category: 'error',
-    title: 'Abonnement expire',
+    title: 'Abonnement expiré',
     message: expiryLabel
-      ? `Ton abonnement premium a expire le ${expiryLabel}. Reviens vite pour continuer sans interruption.`
-      : "Ton abonnement premium a expire. Reviens vite pour continuer sans interruption.",
+      ? `Ton abonnement premium a expiré le ${expiryLabel}. Reviens vite pour continuer sans interruption.`
+      : "Ton abonnement premium a expiré. Reviens vite pour continuer sans interruption.",
     dedupeKey: `subscription-expired:${expiryIso.slice(0, 10)}`,
     payload: {
       kind: 'subscription_expired',
@@ -301,8 +303,8 @@ export async function notifyAnnouncement({
 
 export async function notifyReviewCampaign({
   userId,
-  title = 'Viens reviser',
-  message = "C'est un bon moment pour reprendre tes revisions et garder le rythme.",
+  title = 'Viens réviser',
+  message = "C'est un bon moment pour reprendre tes révisions et garder le rythme.",
   campaignKey,
   payload = {},
 } = {}) {
@@ -312,8 +314,8 @@ export async function notifyReviewCampaign({
   return pushNotification({
     userId: safeUserId,
     category: 'info',
-    title: asString(title) || 'Viens reviser',
-    message: asString(message) || "C'est un bon moment pour reprendre tes revisions et garder le rythme.",
+    title: asString(title) || 'Viens réviser',
+    message: asString(message) || "C'est un bon moment pour reprendre tes révisions et garder le rythme.",
     dedupeKey: asString(campaignKey) ? `review-campaign:${asString(campaignKey)}` : null,
     payload: {
       kind: 'review_campaign',
