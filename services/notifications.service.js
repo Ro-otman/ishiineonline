@@ -208,10 +208,10 @@ export async function notifyLigueResult({
   return pushNotification({
     userId: safeUserId,
     category: roundedScore >= 50 ? 'success' : 'warning',
-    title: `iShiine ✓ Résultats ${asString(subjectName) || 'ligue'}`,
+    title: `iShiine \u2713 R\u00e9sultats ${asString(subjectName) || 'ligue'}`,
     message: asString(subjectName)
-      ? `Résultats disponibles en ${asString(subjectName)} : ${roundedScore}% (${safeCorrectCount}/${safeTotalQuestions}).`
-      : `Tes résultats sont disponibles : ${roundedScore}% (${safeCorrectCount}/${safeTotalQuestions}).`,
+      ? `R\u00e9sultats disponibles en ${asString(subjectName)} : ${roundedScore}% (${safeCorrectCount}/${safeTotalQuestions}).`
+      : `Tes r\u00e9sultats sont disponibles : ${roundedScore}% (${safeCorrectCount}/${safeTotalQuestions}).`,
     dedupeKey: `league-result:${safeRunId}`,
     payload: {
       kind: 'league_result',
@@ -240,8 +240,8 @@ export async function notifySubscriptionExpiring({
   return pushNotification({
     userId: safeUserId,
     category: 'warning',
-    title: 'Abonnement bientôt expiré',
-    message: `Ton abonnement premium expire bientot${expiryLabel ? `, le ${expiryLabel}` : ''}. Pense à le renouveler dans les ${roundedHours} prochaines heures.`,
+    title: 'Abonnement bient\u00f4t expir\u00e9',
+    message: `Ton abonnement premium expire bient\u00f4t${expiryLabel ? `, le ${expiryLabel}` : ''}. Pense \u00e0 le renouveler dans les ${roundedHours} prochaines heures.`,
     dedupeKey: `subscription-expiring:${expiryIso.slice(0, 10)}`,
     payload: {
       kind: 'subscription_expiring',
@@ -264,10 +264,10 @@ export async function notifySubscriptionExpired({
   return pushNotification({
     userId: safeUserId,
     category: 'error',
-    title: 'Abonnement expiré',
+    title: 'Abonnement expir\u00e9',
     message: expiryLabel
-      ? `Ton abonnement premium a expiré le ${expiryLabel}. Reviens vite pour continuer sans interruption.`
-      : "Ton abonnement premium a expiré. Reviens vite pour continuer sans interruption.",
+      ? `Ton abonnement premium a expir\u00e9 le ${expiryLabel}. Reviens vite pour continuer sans interruption.`
+      : "Ton abonnement premium a expir\u00e9. Reviens vite pour continuer sans interruption.",
     dedupeKey: `subscription-expired:${expiryIso.slice(0, 10)}`,
     payload: {
       kind: 'subscription_expired',
@@ -303,8 +303,8 @@ export async function notifyAnnouncement({
 
 export async function notifyReviewCampaign({
   userId,
-  title = 'Viens réviser',
-  message = "C'est un bon moment pour reprendre tes révisions et garder le rythme.",
+  title = 'Viens r\u00e9viser',
+  message = "C'est un bon moment pour reprendre tes r\u00e9visions et garder le rythme.",
   campaignKey,
   payload = {},
 } = {}) {
@@ -314,8 +314,8 @@ export async function notifyReviewCampaign({
   return pushNotification({
     userId: safeUserId,
     category: 'info',
-    title: asString(title) || 'Viens réviser',
-    message: asString(message) || "C'est un bon moment pour reprendre tes révisions et garder le rythme.",
+    title: asString(title) || 'Viens r\u00e9viser',
+    message: asString(message) || "C'est un bon moment pour reprendre tes r\u00e9visions et garder le rythme.",
     dedupeKey: asString(campaignKey) ? `review-campaign:${asString(campaignKey)}` : null,
     payload: {
       kind: 'review_campaign',
