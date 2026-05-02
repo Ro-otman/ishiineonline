@@ -2,6 +2,7 @@
 import { execute, getPool } from '../config/db.js';
 import { getPaymentsDashboardData } from './payments.model.js';
 import { ensureSaReleaseScheduleForSa } from './saReleaseSchedule.model.js';
+import { ensurePushTokensTable } from './devicePushTokens.model.js';
 import {
   formatDateTimeLocalInputValue,
   normalizeDateTimeLocalToUtcSql,
@@ -247,6 +248,35 @@ async function listRecentSubscriptions(limit = 16) {
   );
 }
 
+export async function getLatestAdminPushTarget() {
+  await ensurePushTokensTable();
+
+  const rows = await execute(
+    `
+      SELECT
+        dpt.id_user,
+        dpt.platform,
+        dpt.device_label,
+        dpt.app_version,
+        dpt.updated_at,
+        COALESCE(
+          NULLIF(TRIM(CONCAT(COALESCE(u.prenoms, ''), ' ', COALESCE(u.nom, ''))), ''),
+          NULLIF(u.email, ''),
+          NULLIF(u.phone, ''),
+          dpt.id_user
+        ) AS display_name
+      FROM device_push_tokens dpt
+      LEFT JOIN users u ON u.id_users = dpt.id_user
+      WHERE dpt.is_active = 1
+        AND COALESCE(dpt.fcm_token, '') <> ''
+      ORDER BY COALESCE(dpt.updated_at, dpt.created_at) DESC
+      LIMIT 1
+    `,
+  );
+
+  return Array.isArray(rows) && rows[0] ? rows[0] : null;
+}
+
 async function listAdminClasses() {
   return execute(
     `SELECT id_classe, nom_classe FROM classes ORDER BY id_classe ASC, nom_classe ASC`,
@@ -311,7 +341,7 @@ async function getAdminLigueSettingById(idSetting) {
 }
 
 export async function getAdminOverviewPageData() {
-  const [base, recentUsers, classBreakdown, subjectBreakdown, recentQuizzes, recentSubscriptions, paymentData] = await Promise.all([
+  const [base, recentUsers, classBreakdown, subjectBreakdown, recentQuizzes, recentSubscriptions, paymentData, notificationTestTarget] = await Promise.all([
     getMetricsBundle(),
     listRecentUsers(6),
     listClassBreakdown(6),
@@ -319,6 +349,7 @@ export async function getAdminOverviewPageData() {
     listRecentQuizzes(8),
     listRecentSubscriptions(8),
     getPaymentsDashboardData(8),
+    getLatestAdminPushTarget(),
   ]);
   return {
     ...base,
@@ -329,6 +360,7 @@ export async function getAdminOverviewPageData() {
     recentSubscriptions,
     paymentMetrics: paymentData.metrics,
     recentPayments: paymentData.recentPayments,
+    notificationTestTarget,
   };
 }
 
@@ -661,4 +693,6 @@ export async function saveLigueSettingsFromDashboard(input) {
   } finally {
     connection.release();
   }
-}
+}
+
+

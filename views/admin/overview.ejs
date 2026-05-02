@@ -1,6 +1,7 @@
 ﻿<%- include('partials/layout-start') %>
 
 <% const pm = data.paymentMetrics || {}; %>
+<% const testTarget = data.notificationTestTarget || null; %>
 
 <section class="hero-band global-hero">
   <div class="hero-copy hero-copy-featured">
@@ -103,6 +104,82 @@
 </section>
 
 <section class="content-grid-2 dashboard-grid">
+  <article class="panel form-panel content-form-panel">
+    <div class="section-head content-section-head">
+      <div>
+        <p class="eyebrow"><i class="bx bx-bell"></i> Notification test</p>
+        <h3><i class="bx bx-paper-plane"></i> Envoyer un push systeme</h3>
+      </div>
+      <span class="soft-badge"><i class="bx bx-devices"></i> Test rapide</span>
+    </div>
+
+    <form method="post" action="/admin/notifications/test-push" class="quiz-form notification-test-form">
+      <label class="content-field">
+        <span class="content-field-label"><i class="bx bx-rename"></i> Titre</span>
+        <input type="text" name="title" value="iShiine ✓ Test" maxlength="120" />
+      </label>
+
+      <label class="content-field">
+        <span class="content-field-label"><i class="bx bx-message-rounded-detail"></i> Message</span>
+        <textarea name="message" rows="3">Ceci est une notification de test envoyée depuis l’admin.</textarea>
+      </label>
+
+      <% if (testTarget) { %>
+        <input type="hidden" name="userId" value="<%= testTarget.id_user %>" />
+        <article class="spotlight-card">
+          <span class="spotlight-icon"><i class="bx bx-mobile-alt"></i></span>
+          <div>
+            <strong><%= testTarget.display_name %></strong>
+            <p>Dernier appareil actif<% if (testTarget.platform) { %> • <%= testTarget.platform %><% } %><% if (testTarget.updated_at) { %> • <%= helpers.dateTime(testTarget.updated_at) %><% } %></p>
+          </div>
+        </article>
+      <% } else { %>
+        <p class="empty-copy">Aucun appareil actif détecté. Ouvre l’app sur le téléphone, connecte-toi et laisse Internet actif.</p>
+      <% } %>
+
+      <button type="submit" class="primary-button" <%= testTarget ? '' : 'disabled' %>>
+        <i class="bx bx-send"></i> Envoyer la notification test
+      </button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Verification</p>
+        <h3>Ce qu'on doit voir</h3>
+      </div>
+    </div>
+
+    <div class="spotlight-grid">
+      <article class="spotlight-card">
+        <span class="spotlight-icon"><i class="bx bx-wifi"></i></span>
+        <div>
+          <strong>Telephone connecte</strong>
+          <p>Le mobile doit avoir Internet et les notifications autorisees.</p>
+        </div>
+      </article>
+
+      <article class="spotlight-card">
+        <span class="spotlight-icon"><i class="bx bx-window-open"></i></span>
+        <div>
+          <strong>Banniere systeme</strong>
+          <p>En arriere-plan ou ecran verrouille, la notification doit apparaitre en haut comme d'habitude.</p>
+        </div>
+      </article>
+
+      <article class="spotlight-card">
+        <span class="spotlight-icon"><i class="bx bx-refresh"></i></span>
+        <div>
+          <strong>Si rien n'arrive</strong>
+          <p>On saura alors que le souci vient plutot du token Firebase ou de la build installee sur le telephone.</p>
+        </div>
+      </article>
+    </div>
+  </article>
+</section>
+
+<section class="content-grid-2 dashboard-grid">
   <article class="panel spotlight-panel">
     <div class="section-head">
       <div>
@@ -165,7 +242,82 @@
 </section>
 
 <section class="content-grid-2 dashboard-grid">
+  <article class="panel form-panel content-form-panel">
+    <div class="section-head content-section-head">
+      <div>
+        <p class="eyebrow"><i class="bx bx-bell"></i> Notification test</p>
+        <h3><i class="bx bx-paper-plane"></i> Envoyer un push systeme</h3>
+      </div>
+      <span class="soft-badge"><i class="bx bx-devices"></i> Test rapide</span>
+    </div>
+
+    <form method="post" action="/admin/notifications/test-push" class="quiz-form notification-test-form">
+      <label class="content-field">
+        <span class="content-field-label"><i class="bx bx-rename"></i> Titre</span>
+        <input type="text" name="title" value="iShiine ✓ Test" maxlength="120" />
+      </label>
+
+      <label class="content-field">
+        <span class="content-field-label"><i class="bx bx-message-rounded-detail"></i> Message</span>
+        <textarea name="message" rows="3">Ceci est une notification de test envoyée depuis l’admin.</textarea>
+      </label>
+
+      <% if (testTarget) { %>
+        <input type="hidden" name="userId" value="<%= testTarget.id_user %>" />
+        <article class="spotlight-card">
+          <span class="spotlight-icon"><i class="bx bx-mobile-alt"></i></span>
+          <div>
+            <strong><%= testTarget.display_name %></strong>
+            <p>Dernier appareil actif<% if (testTarget.platform) { %> • <%= testTarget.platform %><% } %><% if (testTarget.updated_at) { %> • <%= helpers.dateTime(testTarget.updated_at) %><% } %></p>
+          </div>
+        </article>
+      <% } else { %>
+        <p class="empty-copy">Aucun appareil actif détecté. Ouvre l’app sur le téléphone, connecte-toi et laisse Internet actif.</p>
+      <% } %>
+
+      <button type="submit" class="primary-button" <%= testTarget ? '' : 'disabled' %>>
+        <i class="bx bx-send"></i> Envoyer la notification test
+      </button>
+    </form>
+  </article>
+
   <article class="panel">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Verification</p>
+        <h3>Ce qu'on doit voir</h3>
+      </div>
+    </div>
+
+    <div class="spotlight-grid">
+      <article class="spotlight-card">
+        <span class="spotlight-icon"><i class="bx bx-wifi"></i></span>
+        <div>
+          <strong>Telephone connecte</strong>
+          <p>Le mobile doit avoir Internet et les notifications autorisees.</p>
+        </div>
+      </article>
+
+      <article class="spotlight-card">
+        <span class="spotlight-icon"><i class="bx bx-window-open"></i></span>
+        <div>
+          <strong>Banniere systeme</strong>
+          <p>En arriere-plan ou ecran verrouille, la notification doit apparaitre en haut comme d'habitude.</p>
+        </div>
+      </article>
+
+      <article class="spotlight-card">
+        <span class="spotlight-icon"><i class="bx bx-refresh"></i></span>
+        <div>
+          <strong>Si rien n'arrive</strong>
+          <p>On saura alors que le souci vient plutot du token Firebase ou de la build installee sur le telephone.</p>
+        </div>
+      </article>
+    </div>
+  </article>
+</section>
+
+<section class="content-grid-2 dashboard-grid">  <article class="panel">
     <div class="section-head">
       <div>
         <p class="eyebrow">Paiements récents</p>
@@ -251,7 +403,82 @@
 </section>
 
 <section class="content-grid-2 dashboard-grid">
-  <article class="panel panel-subscriptions">
+  <article class="panel form-panel content-form-panel">
+    <div class="section-head content-section-head">
+      <div>
+        <p class="eyebrow"><i class="bx bx-bell"></i> Notification test</p>
+        <h3><i class="bx bx-paper-plane"></i> Envoyer un push systeme</h3>
+      </div>
+      <span class="soft-badge"><i class="bx bx-devices"></i> Test rapide</span>
+    </div>
+
+    <form method="post" action="/admin/notifications/test-push" class="quiz-form notification-test-form">
+      <label class="content-field">
+        <span class="content-field-label"><i class="bx bx-rename"></i> Titre</span>
+        <input type="text" name="title" value="iShiine ✓ Test" maxlength="120" />
+      </label>
+
+      <label class="content-field">
+        <span class="content-field-label"><i class="bx bx-message-rounded-detail"></i> Message</span>
+        <textarea name="message" rows="3">Ceci est une notification de test envoyée depuis l’admin.</textarea>
+      </label>
+
+      <% if (testTarget) { %>
+        <input type="hidden" name="userId" value="<%= testTarget.id_user %>" />
+        <article class="spotlight-card">
+          <span class="spotlight-icon"><i class="bx bx-mobile-alt"></i></span>
+          <div>
+            <strong><%= testTarget.display_name %></strong>
+            <p>Dernier appareil actif<% if (testTarget.platform) { %> • <%= testTarget.platform %><% } %><% if (testTarget.updated_at) { %> • <%= helpers.dateTime(testTarget.updated_at) %><% } %></p>
+          </div>
+        </article>
+      <% } else { %>
+        <p class="empty-copy">Aucun appareil actif détecté. Ouvre l’app sur le téléphone, connecte-toi et laisse Internet actif.</p>
+      <% } %>
+
+      <button type="submit" class="primary-button" <%= testTarget ? '' : 'disabled' %>>
+        <i class="bx bx-send"></i> Envoyer la notification test
+      </button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Verification</p>
+        <h3>Ce qu'on doit voir</h3>
+      </div>
+    </div>
+
+    <div class="spotlight-grid">
+      <article class="spotlight-card">
+        <span class="spotlight-icon"><i class="bx bx-wifi"></i></span>
+        <div>
+          <strong>Telephone connecte</strong>
+          <p>Le mobile doit avoir Internet et les notifications autorisees.</p>
+        </div>
+      </article>
+
+      <article class="spotlight-card">
+        <span class="spotlight-icon"><i class="bx bx-window-open"></i></span>
+        <div>
+          <strong>Banniere systeme</strong>
+          <p>En arriere-plan ou ecran verrouille, la notification doit apparaitre en haut comme d'habitude.</p>
+        </div>
+      </article>
+
+      <article class="spotlight-card">
+        <span class="spotlight-icon"><i class="bx bx-refresh"></i></span>
+        <div>
+          <strong>Si rien n'arrive</strong>
+          <p>On saura alors que le souci vient plutot du token Firebase ou de la build installee sur le telephone.</p>
+        </div>
+      </article>
+    </div>
+  </article>
+</section>
+
+<section class="content-grid-2 dashboard-grid">  <article class="panel panel-subscriptions">
     <div class="section-head">
       <div>
         <p class="eyebrow">Activation premium</p>
@@ -344,6 +571,8 @@
 </section>
 
 <%- include('partials/layout-end') %>
+
+
 
 
 

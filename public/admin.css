@@ -1404,6 +1404,17 @@ select:focus {
   filter: brightness(1.02);
 }
 
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+  box-shadow: none;
+  filter: none;
+}
+
+.primary-button:disabled:hover {
+  transform: none;
+}
+
 .table-wrap {
   overflow: auto;
   border-radius: 20px;
@@ -2247,3 +2258,4 @@ body.admin-body.admin-loaded .admin-site-loader {
   width: 100%;
   justify-content: center;
 }
+
