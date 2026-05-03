@@ -1,4 +1,5 @@
 import { getUserChannel } from '../services/realtimeGateway.service.js';
+import { sendConnectivitySystemNotifications } from '../services/notificationAutomation.service.js';
 import { verifyUserAccessToken } from '../services/userJwt.service.js';
 
 function asString(value) {
@@ -42,7 +43,19 @@ export function registerNotificationSockets(io) {
 
         activeUserId = userId;
         socket.join(getUserChannel(userId));
-        return ack?.({ ok: true, userId });
+        ack?.({ ok: true, userId });
+
+        void sendConnectivitySystemNotifications({
+          userId,
+          trigger: 'socket_subscribe',
+        }).catch((error) => {
+          console.error('[notifications] socket connectivity automation failed', {
+            userId,
+            code: error?.code,
+            message: error?.message,
+          });
+        });
+        return;
       } catch (error) {
         return ack?.({
           ok: false,

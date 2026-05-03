@@ -3,7 +3,7 @@
   acknowledgeNotification,
   listUserNotifications,
 } from '../services/notifications.service.js';
-import { runNotificationAutomationCycle, sendAdminCampaign } from '../services/notificationAutomation.service.js';
+import { runNotificationAutomationCycle, sendAdminCampaign, sendConnectivitySystemNotifications } from '../services/notificationAutomation.service.js';
 import {
   registerDevicePush,
   unregisterDevicePush,
@@ -81,9 +81,28 @@ export async function registerDevice(req, res, next) {
       deviceLabel: body.deviceLabel || body.device_label,
     });
 
+    let systemNotifications = null;
+    try {
+      systemNotifications = await sendConnectivitySystemNotifications({
+        userId,
+        trigger: 'device_register',
+        payload: {
+          platform: asString(body.platform),
+          appVersion: asString(body.appVersion || body.app_version),
+        },
+      });
+    } catch (notificationError) {
+      console.error('[notifications] connectivity automation failed', {
+        userId,
+        code: notificationError?.code,
+        message: notificationError?.message,
+      });
+    }
+
     res.status(201).json({
       ok: true,
       device,
+      systemNotifications,
     });
   } catch (error) {
     next(error);

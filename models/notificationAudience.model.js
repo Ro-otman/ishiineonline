@@ -128,6 +128,49 @@ export async function listUsersDueForReviewReminders({ dueBefore = new Date().to
   );
 }
 
+export async function getUserDueForReviewReminder({
+  userId,
+  dueBefore = new Date().toISOString(),
+} = {}) {
+  const safeUserId = asString(userId);
+  const safeDueBefore = asString(dueBefore) || new Date().toISOString();
+  if (!safeUserId) return null;
+
+  const rows = await execute(
+    `
+      SELECT
+        u.id_users,
+        u.nom,
+        u.prenoms,
+        u.email,
+        u.phone,
+        u.classe,
+        u.is_subscribed,
+        u.subscription_expiry,
+        COUNT(DISTINCT ri.id_review) AS due_reviews,
+        MIN(ri.next_review_at) AS next_review_at
+      FROM users u
+      JOIN review_items ri
+        ON ri.id_user = u.id_users
+       AND ri.next_review_at <= ?
+      WHERE u.id_users = ?
+      GROUP BY
+        u.id_users,
+        u.nom,
+        u.prenoms,
+        u.email,
+        u.phone,
+        u.classe,
+        u.is_subscribed,
+        u.subscription_expiry
+      LIMIT 1
+    `,
+    [safeDueBefore, safeUserId],
+  );
+
+  return rows[0] ?? null;
+}
+
 export async function listUsersForCampaign({ audience = 'all' } = {}) {
   const safeAudience = asString(audience).toLowerCase() || 'all';
 

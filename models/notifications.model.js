@@ -85,7 +85,7 @@ async function getNotificationById(idNotification) {
   return Array.isArray(rows) && rows[0] ? rows[0] : null;
 }
 
-async function getNotificationByDedupeKey({ userId, dedupeKey }) {
+export async function findNotificationByDedupeKey({ userId, dedupeKey }) {
   const safeUserId = asString(userId);
   const safeDedupeKey = asString(dedupeKey);
   if (!safeUserId || !safeDedupeKey) return null;
@@ -111,7 +111,7 @@ export async function createNotification(record = {}) {
   }
 
   if (dedupeKey) {
-    const existing = await getNotificationByDedupeKey({ userId, dedupeKey });
+    const existing = await findNotificationByDedupeKey({ userId, dedupeKey });
     if (existing) return existing;
   }
 
@@ -148,7 +148,7 @@ export async function createNotification(record = {}) {
     );
   } catch (error) {
     if (error?.code === 'ER_DUP_ENTRY' && dedupeKey) {
-      return getNotificationByDedupeKey({ userId, dedupeKey });
+      return findNotificationByDedupeKey({ userId, dedupeKey });
     }
     throw error;
   }
