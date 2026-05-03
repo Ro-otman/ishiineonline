@@ -2,10 +2,8 @@
   acknowledgeAllNotifications,
   acknowledgeNotification,
   listUserNotifications,
-  notifyAnnouncement,
 } from '../services/notifications.service.js';
 import { runNotificationAutomationCycle, sendAdminCampaign } from '../services/notificationAutomation.service.js';
-import { getLatestAdminPushTarget } from '../models/adminDashboard.model.js';
 import {
   registerDevicePush,
   unregisterDevicePush,
@@ -39,7 +37,7 @@ function buildError(message, statusCode = 400, code = 'BAD_REQUEST') {
 
 function redirectAdminOverviewWithFeedback(res, kind, message) {
   const key = kind === 'error' ? 'error' : 'success';
-  const encoded = encodeURIComponent(asString(message) || 'Action terminee.');
+  const encoded = encodeURIComponent(asString(message) || 'Action terminée.');
   return res.redirect('/admin?' + key + '=' + encoded);
 }
 
@@ -154,43 +152,32 @@ export async function sendAdminTestPushFromDashboard(req, res, next) {
   try {
     const body = req.body || {};
     const title = asString(body.title) || 'iShiine \u{1F38A} Test';
-    const message = asString(body.message) || 'Ceci est une notification de test envoyee depuis l\'admin.';
-    const target = await getLatestAdminPushTarget();
-    const userId = asString(body.userId || body.user_id || target?.id_user);
+    const message = asString(body.message) || 'Ceci est une notification de test envoyée depuis l\'admin.';
 
-    if (!userId) {
-      return redirectAdminOverviewWithFeedback(
-        res,
-        'error',
-        "Aucun appareil actif n'a ete detecte pour envoyer la notification test.",
-      );
-    }
-
-    const notification = await notifyAnnouncement({
-      userId,
+    const result = await sendAdminCampaign({
+      kind: 'announcement',
+      audience: 'all',
+      category: 'info',
       title,
       message,
-      category: 'info',
       payload: {
         source: 'admin_dashboard_test',
         requestedBy: asString(req.admin?.idAdmin || req.admin?.id_admin || req.admin?.displayName || 'admin'),
-        targetPlatform: asString(target?.platform),
       },
     });
 
-    if (!notification) {
+    if (!result.recipientCount) {
       return redirectAdminOverviewWithFeedback(
         res,
         'error',
-        "La notification test n'a pas pu etre creee.",
+        "Aucun utilisateur n'a été trouvé pour envoyer la notification test.",
       );
     }
 
-    const targetLabel = asString(target?.display_name || target?.id_user || userId);
     return redirectAdminOverviewWithFeedback(
       res,
       'success',
-      'Notification test envoyee a ' + targetLabel + '.',
+      `Notification test envoyée à ${result.sentCount} utilisateur(s).`,
     );
   } catch (error) {
     next(error);

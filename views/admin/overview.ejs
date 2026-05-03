@@ -2,6 +2,7 @@
 
 <% const pm = data.paymentMetrics || {}; %>
 <% const testTarget = data.notificationTestTarget || null; %>
+<% const hasNotificationAudience = Number(data.metrics.totalUsers || 0) > 0; %>
 
 <section class="hero-band global-hero">
   <div class="hero-copy hero-copy-featured">
@@ -108,7 +109,7 @@
     <div class="section-head content-section-head">
       <div>
         <p class="eyebrow"><i class="bx bx-bell"></i> Notification test</p>
-        <h3><i class="bx bx-paper-plane"></i> Envoyer un push systeme</h3>
+        <h3><i class="bx bx-paper-plane"></i> Envoyer un push système</h3>
       </div>
       <span class="soft-badge"><i class="bx bx-devices"></i> Test rapide</span>
     </div>
@@ -124,20 +125,19 @@
         <textarea name="message" rows="3">Ceci est une notification de test envoyée depuis l’admin.</textarea>
       </label>
 
-      <% if (testTarget) { %>
-        <input type="hidden" name="userId" value="<%= testTarget.id_user %>" />
+      <% if (hasNotificationAudience) { %>
         <article class="spotlight-card">
           <span class="spotlight-icon"><i class="bx bx-mobile-alt"></i></span>
           <div>
-            <strong><%= testTarget.display_name %></strong>
-            <p>Dernier appareil actif<% if (testTarget.platform) { %> • <%= testTarget.platform %><% } %><% if (testTarget.updated_at) { %> • <%= helpers.dateTime(testTarget.updated_at) %><% } %></p>
+            <strong>Tous les utilisateurs</strong>
+            <p><%= helpers.number(data.metrics.totalUsers || 0) %> compte(s) ciblé(s)<% if (testTarget) { %> • Dernier appareil actif : <%= testTarget.display_name %><% if (testTarget.platform) { %> • <%= testTarget.platform %><% } %><% if (testTarget.updated_at) { %> • <%= helpers.dateTime(testTarget.updated_at) %><% } %><% } %></p>
           </div>
         </article>
       <% } else { %>
-        <p class="empty-copy">Aucun appareil actif détecté. Ouvre l’app sur le téléphone, connecte-toi et laisse Internet actif.</p>
+        <p class="empty-copy">Aucun utilisateur détecté. Crée un compte avant d’envoyer une notification test.</p>
       <% } %>
 
-      <button type="submit" class="primary-button" <%= testTarget ? '' : 'disabled' %>>
+      <button type="submit" class="primary-button" <%= hasNotificationAudience ? '' : 'disabled' %>>
         <i class="bx bx-send"></i> Envoyer la notification test
       </button>
     </form>
@@ -146,7 +146,7 @@
   <article class="panel">
     <div class="section-head">
       <div>
-        <p class="eyebrow">Verification</p>
+        <p class="eyebrow">Vérification</p>
         <h3>Ce qu'on doit voir</h3>
       </div>
     </div>
@@ -155,24 +155,24 @@
       <article class="spotlight-card">
         <span class="spotlight-icon"><i class="bx bx-wifi"></i></span>
         <div>
-          <strong>Telephone connecte</strong>
-          <p>Le mobile doit avoir Internet et les notifications autorisees.</p>
+          <strong>Téléphone connecté</strong>
+          <p>Le mobile doit avoir Internet et les notifications autorisées.</p>
         </div>
       </article>
 
       <article class="spotlight-card">
         <span class="spotlight-icon"><i class="bx bx-window-open"></i></span>
         <div>
-          <strong>Banniere systeme</strong>
-          <p>En arriere-plan ou ecran verrouille, la notification doit apparaitre en haut comme d'habitude.</p>
+          <strong>Bannière système</strong>
+          <p>En arrière-plan ou écran verrouillé, la notification doit apparaître en haut comme d’habitude.</p>
         </div>
       </article>
 
       <article class="spotlight-card">
         <span class="spotlight-icon"><i class="bx bx-refresh"></i></span>
         <div>
-          <strong>Si rien n'arrive</strong>
-          <p>On saura alors que le souci vient plutot du token Firebase ou de la build installee sur le telephone.</p>
+          <strong>Si rien n’arrive</strong>
+          <p>On saura alors que le souci vient plutôt du token Firebase ou de la build installée sur le téléphone.</p>
         </div>
       </article>
     </div>
