@@ -1,9 +1,9 @@
-﻿import crypto from 'node:crypto';
+import crypto from 'node:crypto';
 
 import { env } from '../config/env.js';
 import { findNotificationByDedupeKey } from '../models/notifications.model.js';
 import { getUserById } from '../models/users.model.js';
-import { getUserDueForReviewReminder, listLigueRecipientsForSetting, listUsersDueForReviewReminders, listUsersForCampaign, listUsersWithSubscriptionDates } from '../models/notificationAudience.model.js';
+import { getUserDueForReviewReminder, listLigueRecipientsForSetting, listUsersDueForReviewReminders, listUsersForCampaign, listUsersForEngagementRelance, listUsersWithSubscriptionDates } from '../models/notificationAudience.model.js';
 import { listLatestLigueSettingsForAutomation } from '../models/ligueSettings.model.js';
 import { ensurePushTokensTable } from '../models/devicePushTokens.model.js';
 import {
@@ -61,6 +61,43 @@ function reviewReminderBucketKey(now = new Date()) {
 
 function reviewReminderDedupeKey(campaignKey) {
   return `review-campaign:${asString(campaignKey)}`;
+}
+
+function engagementReminderBucketKey(now = new Date()) {
+  const intervalHours = Math.max(1, env.ENGAGEMENT_REMINDER_INTERVAL_HOURS);
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  const bucketStart = new Date(Math.floor(now.getTime() / intervalMs) * intervalMs);
+  return bucketStart.toISOString().slice(0, 13);
+}
+
+function engagementReminderDedupeKey(campaignKey) {
+  return `announcement:${asString(campaignKey)}`;
+}
+
+const engagementReminderCopies = [
+  {
+    title: 'iShiine - Pr\u00eat \u00e0 apprendre ?',
+    message: "Quelques minutes aujourd'hui peuvent faire avancer ton niveau. Ouvre iShiine et reprends ton rythme.",
+  },
+  {
+    title: 'iShiine - Garde le rythme',
+    message: 'Un petit effort r\u00e9gulier vaut beaucoup. Reviens apprendre une notion maintenant.',
+  },
+  {
+    title: 'iShiine - Tu peux le faire',
+    message: 'M\u00eame une courte s\u00e9ance compte. Lance iShiine et avance pas \u00e0 pas.',
+  },
+  {
+    title: 'iShiine - On reprend ?',
+    message: 'Ton prochain progr\u00e8s peut commencer aujourd\u2019hui. Reviens apprendre \u00e0 ton rythme.',
+  },
+];
+
+function buildEngagementReminderCopy(now = new Date()) {
+  const intervalHours = Math.max(1, env.ENGAGEMENT_REMINDER_INTERVAL_HOURS);
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  const bucketIndex = Math.floor(now.getTime() / intervalMs);
+  return engagementReminderCopies[bucketIndex % engagementReminderCopies.length];
 }
 
 function subscriptionExpiringDedupeKey(expiryIso) {
@@ -159,6 +196,49 @@ async function dispatchReviewReminders(now = new Date()) {
         source: 'review_reminder',
         dueReviews: Number(user?.due_reviews) || 0,
         nextReviewAt: asString(user?.next_review_at),
+      },
+    });
+    if (notification) sentCount += 1;
+  });
+
+  return {
+    recipientCount: rows.length,
+    sentCount,
+    campaignKey,
+  };
+}
+
+async function dispatchEngagementRelanceNotifications(now = new Date()) {
+  await ensurePushTokensTable();
+
+  if (!env.ENGAGEMENT_REMINDER_ENABLED) {
+    return { sentCount: 0, skipped: true, reason: 'disabled' };
+  }
+
+  const rows = uniqueByUserId(
+    await listUsersForEngagementRelance({ dueBefore: now.toISOString() }),
+  ).filter((user) => (Number(user?.due_reviews) || 0) <= 0);
+
+  const campaignKey = `engagement-relance:${engagementReminderBucketKey(now)}`;
+  let sentCount = 0;
+
+  await runInBatches(rows, async (user) => {
+    if (await hasNotification(user.id_users, engagementReminderDedupeKey(campaignKey))) {
+      return;
+    }
+
+    const copy = buildEngagementReminderCopy(now);
+    const notification = await notifyAnnouncement({
+      userId: user.id_users,
+      title: copy.title,
+      message: copy.message,
+      category: 'info',
+      campaignKey,
+      payload: {
+        automated: true,
+        source: 'engagement_relance',
+        dueReviews: Number(user?.due_reviews) || 0,
+        lastPushSeenAt: asString(user?.last_push_seen_at),
       },
     });
     if (notification) sentCount += 1;
@@ -425,9 +505,10 @@ export async function runNotificationAutomationCycle({ now = new Date() } = {}) 
 
   cycleRunning = true;
   try {
-    const [leagueStart, reviewReminders, subscriptions] = await Promise.all([
+    const [leagueStart, reviewReminders, engagementRelance, subscriptions] = await Promise.all([
       dispatchLeagueStartNotifications(now),
       dispatchReviewReminders(now),
+      dispatchEngagementRelanceNotifications(now),
       dispatchSubscriptionLifecycleNotifications(now),
     ]);
 
@@ -435,6 +516,7 @@ export async function runNotificationAutomationCycle({ now = new Date() } = {}) 
       ok: true,
       leagueStart,
       reviewReminders,
+      engagementRelance,
       subscriptions,
     };
   } finally {
@@ -473,4 +555,3 @@ export function startNotificationAutomation() {
 
   console.log(`[notifications] automation started (${Math.round(intervalMs / 1000)}s)`);
 }
-

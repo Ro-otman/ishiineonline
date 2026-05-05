@@ -171,6 +171,44 @@ export async function getUserDueForReviewReminder({
   return rows[0] ?? null;
 }
 
+export async function listUsersForEngagementRelance({ dueBefore = new Date().toISOString() } = {}) {
+  const safeDueBefore = asString(dueBefore) || new Date().toISOString();
+
+  return execute(
+    `
+      SELECT
+        u.id_users,
+        u.nom,
+        u.prenoms,
+        u.email,
+        u.phone,
+        u.classe,
+        u.is_subscribed,
+        u.subscription_expiry,
+        COUNT(DISTINCT ri.id_review) AS due_reviews,
+        MAX(dpt.last_seen_at) AS last_push_seen_at
+      FROM users u
+      JOIN device_push_tokens dpt
+        ON dpt.id_user = u.id_users
+       AND dpt.is_active = 1
+      LEFT JOIN review_items ri
+        ON ri.id_user = u.id_users
+       AND ri.next_review_at <= ?
+      GROUP BY
+        u.id_users,
+        u.nom,
+        u.prenoms,
+        u.email,
+        u.phone,
+        u.classe,
+        u.is_subscribed,
+        u.subscription_expiry
+      ORDER BY last_push_seen_at DESC, u.id_users ASC
+    `,
+    [safeDueBefore],
+  );
+}
+
 export async function listUsersForCampaign({ audience = 'all' } = {}) {
   const safeAudience = asString(audience).toLowerCase() || 'all';
 
