@@ -76,20 +76,52 @@ function engagementReminderDedupeKey(campaignKey) {
 
 const engagementReminderCopies = [
   {
-    title: 'iShiine - Pr\u00eat \u00e0 apprendre ?',
-    message: "Quelques minutes aujourd'hui peuvent faire avancer ton niveau. Ouvre iShiine et reprends ton rythme.",
+    title: 'iShiine - Tu peux avancer',
+    message: 'Un petit pas aujourd\u2019hui peut changer ta semaine. Ouvre iShiine et reprends confiance.',
   },
   {
-    title: 'iShiine - Garde le rythme',
-    message: 'Un petit effort r\u00e9gulier vaut beaucoup. Reviens apprendre une notion maintenant.',
+    title: 'iShiine - Ton effort compte',
+    message: 'Tu n\u2019as pas besoin d\u2019\u00eatre parfait. Viens juste faire une courte s\u00e9ance et continue ton chemin.',
   },
   {
-    title: 'iShiine - Tu peux le faire',
-    message: 'M\u00eame une courte s\u00e9ance compte. Lance iShiine et avance pas \u00e0 pas.',
+    title: 'iShiine - Reviens doucement',
+    message: 'M\u00eame 5 minutes peuvent relancer ton rythme. Ouvre iShiine et fais une chose simple maintenant.',
   },
   {
-    title: 'iShiine - On reprend ?',
-    message: 'Ton prochain progr\u00e8s peut commencer aujourd\u2019hui. Reviens apprendre \u00e0 ton rythme.',
+    title: 'iShiine - Ne l\u00e2che pas',
+    message: 'Ce que tu apprends aujourd\u2019hui te rendra plus fort demain. Reviens progresser \u00e0 ton rythme.',
+  },
+  {
+    title: 'iShiine - Tu as d\u00e9j\u00e0 commenc\u00e9',
+    message: 'Le plus dur, c\u2019est souvent de reprendre. Ouvre iShiine, fais une petite s\u00e9ance, et avance.',
+  },
+  {
+    title: 'iShiine - Une victoire simple',
+    message: 'Choisis une notion, r\u00e9ponds \u00e0 quelques questions, et offre-toi une petite victoire aujourd\u2019hui.',
+  },
+  {
+    title: 'iShiine - Ton niveau monte',
+    message: 'Chaque effort construit quelque chose. Reviens apprendre maintenant, m\u00eame quelques minutes suffisent.',
+  },
+  {
+    title: 'iShiine - Courage',
+    message: 'Tu peux reprendre sans pression. Ouvre iShiine et fais juste le prochain exercice devant toi.',
+  },
+  {
+    title: 'iShiine - Continue comme \u00e7a',
+    message: 'Ton avenir se construit avec ces petits moments. Reviens t\u2019entra\u00eener et garde ton \u00e9lan.',
+  },
+  {
+    title: 'iShiine - Tu es capable',
+    message: 'Une difficult\u00e9 n\u2019est pas une fin. Reviens sur iShiine, essaie encore, et laisse ton progr\u00e8s parler.',
+  },
+  {
+    title: 'iShiine - Fais-le pour toi',
+    message: 'Personne ne peut apprendre \u00e0 ta place, mais chaque effort te rapproche de ton objectif. Reviens maintenant.',
+  },
+  {
+    title: 'iShiine - Petit effort, grand impact',
+    message: 'Une courte session peut suffire pour d\u00e9bloquer une notion. Ouvre iShiine et avance un peu plus.',
   },
 ];
 
@@ -119,13 +151,13 @@ function buildReviewReminderCopy(user = {}) {
   if (dueReviews <= 1) {
     return {
       title: 'iShiine \u{1F38A} R\u00e9vision en attente',
-      message: "Tu as 1 r\u00e9vision \u00e0 reprendre. Ouvre iShiine d\u00e8s que tu es connect\u00e9 et garde le rythme.",
+      message: "Tu as 1 r\u00e9vision \u00e0 reprendre. Ouvre iShiine et garde le rythme, m\u00eame hors connexion.",
     };
   }
 
   return {
     title: 'iShiine \u{1F38A} R\u00e9visions en attente',
-    message: `Tu as ${dueReviews} r\u00e9visions \u00e0 reprendre. Ouvre iShiine d\u00e8s que tu es connect\u00e9 et garde le rythme.`,
+    message: `Tu as ${dueReviews} r\u00e9visions \u00e0 reprendre. Ouvre iShiine et garde le rythme, m\u00eame hors connexion.`,
   };
 }
 
@@ -217,7 +249,7 @@ async function dispatchEngagementRelanceNotifications(now = new Date()) {
 
   const rows = uniqueByUserId(
     await listUsersForEngagementRelance({ dueBefore: now.toISOString() }),
-  ).filter((user) => (Number(user?.due_reviews) || 0) <= 0);
+  );
 
   const campaignKey = `engagement-relance:${engagementReminderBucketKey(now)}`;
   let sentCount = 0;
