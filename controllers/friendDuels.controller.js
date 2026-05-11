@@ -11,6 +11,7 @@ import {
   listFriendDuelHistoryForUser,
 } from '../models/friendDuels.model.js';
 import {
+  findSaContextByLabels,
   getLigueQuizPayloadByIds,
   getSaContextById,
   listCorrectOptionIdsByQuizIds,
@@ -271,7 +272,10 @@ async function resolveAuthenticatedUser(userId) {
 export async function createDuelInvite(req, res, next) {
   try {
     const userId = asString(req.user?.idUser);
-    const idSa = asInt(req.body?.idSa ?? req.body?.id_sa);
+    let idSa = asInt(req.body?.idSa ?? req.body?.id_sa);
+    const classeLabel = asString(req.body?.classe ?? req.body?.classe_label);
+    const subjectName = asString(req.body?.subject ?? req.body?.subject_name);
+    const saName = asString(req.body?.saName ?? req.body?.sa_name);
     const requestedTimerSeconds = clampInt(
       req.body?.timerSeconds ?? req.body?.timer_seconds,
       { min: 5, max: 600 },
@@ -303,7 +307,17 @@ export async function createDuelInvite(req, res, next) {
       });
     }
 
-    const saContext = await getSaContextById(idSa);
+    let saContext = await getSaContextById(idSa);
+    if (!saContext) {
+      saContext = await findSaContextByLabels({
+        classe: classeLabel,
+        subject: subjectName,
+        saName,
+      });
+      if (saContext?.id_sa) {
+        idSa = Number(saContext.id_sa);
+      }
+    }
     if (!saContext) {
       return res.status(404).json({
         ok: false,

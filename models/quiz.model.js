@@ -248,6 +248,63 @@ export async function getSaContextById(id_sa) {
   };
 }
 
+export async function findSaContextByLabels({
+  classe = '',
+  subject = '',
+  saName = '',
+}) {
+  const safeClasse = String(classe ?? '').trim();
+  const safeSubject = String(subject ?? '').trim();
+  const safeSaName = String(saName ?? '').trim();
+  if (!safeSubject || !safeSaName) return null;
+
+  const filters = [];
+  const params = [];
+  if (safeClasse) {
+    filters.push('LOWER(TRIM(c.nom_classe)) = LOWER(TRIM(?))');
+    params.push(safeClasse);
+  }
+  filters.push('LOWER(TRIM(m.nom_matiere)) = LOWER(TRIM(?))');
+  filters.push('LOWER(TRIM(s.nom_sa)) = LOWER(TRIM(?))');
+  params.push(safeSubject, safeSaName);
+
+  const rows = await execute(
+    `
+      SELECT
+        s.id_sa,
+        s.nom_sa,
+        m.nom_matiere,
+        c.nom_classe,
+        c.id_classe,
+        COALESCE(ts.id_type, NULL) AS id_type,
+        COUNT(DISTINCT q.id_quiz) AS question_count
+      FROM sa s
+      JOIN programme p ON p.id_programme = s.id_programme
+      JOIN matieres m ON m.id_matiere = p.id_matiere
+      JOIN classes c ON c.id_classe = p.id_classe
+      LEFT JOIN type_series ts ON ts.id_type = p.id_type
+      LEFT JOIN quiz q ON q.id_sa = s.id_sa
+      WHERE ${filters.join(' AND ')}
+      GROUP BY s.id_sa, s.nom_sa, m.nom_matiere, c.nom_classe, c.id_classe, ts.id_type
+      ORDER BY COUNT(DISTINCT q.id_quiz) DESC, s.id_sa ASC
+      LIMIT 1
+    `,
+    params,
+  );
+
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  return {
+    id_sa: asInt(row.id_sa),
+    nom_sa: row.nom_sa,
+    nom_matiere: row.nom_matiere,
+    nom_classe: row.nom_classe,
+    id_classe: asInt(row.id_classe),
+    id_type: row.id_type == null ? null : asInt(row.id_type),
+    question_count: asInt(row.question_count),
+  };
+}
+
 export async function listQuizCandidatesForSa({
   id_sa,
   limit = null,
