@@ -76,51 +76,51 @@ function engagementReminderDedupeKey(campaignKey) {
 
 const engagementReminderCopies = [
   {
-    title: 'iShiine - Tu peux avancer',
+    title: 'iShiine \u{2728} - Tu peux avancer',
     message: 'Un petit pas aujourd\u2019hui peut changer ta semaine. Ouvre iShiine et reprends confiance.',
   },
   {
-    title: 'iShiine - Ton effort compte',
+    title: 'iShiine \u{1F4AA} - Ton effort compte',
     message: 'Tu n\u2019as pas besoin d\u2019\u00eatre parfait. Viens juste faire une courte s\u00e9ance et continue ton chemin.',
   },
   {
-    title: 'iShiine - Reviens doucement',
+    title: 'iShiine \u{1F331} - Reviens doucement',
     message: 'M\u00eame 5 minutes peuvent relancer ton rythme. Ouvre iShiine et fais une chose simple maintenant.',
   },
   {
-    title: 'iShiine - Ne l\u00e2che pas',
+    title: 'iShiine \u{1F525} - Ne l\u00e2che pas',
     message: 'Ce que tu apprends aujourd\u2019hui te rendra plus fort demain. Reviens progresser \u00e0 ton rythme.',
   },
   {
-    title: 'iShiine - Tu as d\u00e9j\u00e0 commenc\u00e9',
+    title: 'iShiine \u{1F680} - Tu as d\u00e9j\u00e0 commenc\u00e9',
     message: 'Le plus dur, c\u2019est souvent de reprendre. Ouvre iShiine, fais une petite s\u00e9ance, et avance.',
   },
   {
-    title: 'iShiine - Une victoire simple',
+    title: 'iShiine \u{1F3C6} - Une victoire simple',
     message: 'Choisis une notion, r\u00e9ponds \u00e0 quelques questions, et offre-toi une petite victoire aujourd\u2019hui.',
   },
   {
-    title: 'iShiine - Ton niveau monte',
+    title: 'iShiine \u{1F4C8} - Ton niveau monte',
     message: 'Chaque effort construit quelque chose. Reviens apprendre maintenant, m\u00eame quelques minutes suffisent.',
   },
   {
-    title: 'iShiine - Courage',
+    title: 'iShiine \u{1F31F} - Courage',
     message: 'Tu peux reprendre sans pression. Ouvre iShiine et fais juste le prochain exercice devant toi.',
   },
   {
-    title: 'iShiine - Continue comme \u00e7a',
+    title: 'iShiine \u{26A1} - Continue comme \u00e7a',
     message: 'Ton avenir se construit avec ces petits moments. Reviens t\u2019entra\u00eener et garde ton \u00e9lan.',
   },
   {
-    title: 'iShiine - Tu es capable',
+    title: 'iShiine \u{1F3AF} - Tu es capable',
     message: 'Une difficult\u00e9 n\u2019est pas une fin. Reviens sur iShiine, essaie encore, et laisse ton progr\u00e8s parler.',
   },
   {
-    title: 'iShiine - Fais-le pour toi',
+    title: 'iShiine \u{1F499} - Fais-le pour toi',
     message: 'Personne ne peut apprendre \u00e0 ta place, mais chaque effort te rapproche de ton objectif. Reviens maintenant.',
   },
   {
-    title: 'iShiine - Petit effort, grand impact',
+    title: 'iShiine \u{1F308} - Petit effort, grand impact',
     message: 'Une courte session peut suffire pour d\u00e9bloquer une notion. Ouvre iShiine et avance un peu plus.',
   },
 ];
